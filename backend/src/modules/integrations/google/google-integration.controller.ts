@@ -2,6 +2,9 @@ import { Controller, Get, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { PublicRoute } from '../../security/public.decorator';
+import { CurrentUser, TenantId } from '../../security/current-user.decorator';
+import { Roles } from '../../security/roles.decorator';
+import { AuthTokenPayload } from '../../auth/token';
 import { GoogleCalendarService } from './google-calendar.service';
 import { GoogleOAuthTokenService } from './google-oauth-token.service';
 
@@ -14,14 +17,15 @@ export class GoogleIntegrationController {
   ) {}
 
   @Get('auth-url')
-  authUrl(@Query('company_id') companyId = 'sabero') {
-    return { url: this.calendar.getAuthUrl(companyId) };
+  @Roles('owner')
+  async authUrl(@CurrentUser user: AuthTokenPayload) {
+    return { url: await this.calendar.getAuthUrl(user) };
   }
 
-  @PublicRoute()
+  @Roles('owner')
   @Get('start')
-  start(@Res() response: Response, @Query('company_id') companyId = 'sabero') {
-    response.redirect(this.calendar.getAuthUrl(companyId));
+  async start(@Res() response: Response, @CurrentUser user: AuthTokenPayload) {
+    response.redirect(await this.calendar.getAuthUrl(user));
   }
 
   @PublicRoute()
@@ -30,27 +34,28 @@ export class GoogleIntegrationController {
     @Res() response: Response,
     @Query('code') code?: string,
     @Query('error') error?: string,
-    @Query('state') companyId = 'sabero',
+    @Query('state') state?: string,
   ) {
     if (error) {
-      return response.redirect(this.dashboardRedirectUrl(companyId, 'error', error));
+      return response.redirect(this.dashboardRedirectUrl('error', error));
     }
 
     if (!code) {
-      return response.redirect(this.dashboardRedirectUrl(companyId, 'error', 'missing_code'));
+      return response.redirect(this.dashboardRedirectUrl('error', 'missing_code'));
     }
 
     try {
-      await this.calendar.exchangeCodeForTokens(code, companyId);
-      return response.redirect(this.dashboardRedirectUrl(companyId, 'connected'));
+      if (!state) throw new Error('missing_state');
+      await this.calendar.exchangeCodeForTokens(code, state);
+      return response.redirect(this.dashboardRedirectUrl('connected'));
     } catch (tokenError) {
       const reason = tokenError instanceof Error ? tokenError.message : 'token_exchange_failed';
-      return response.redirect(this.dashboardRedirectUrl(companyId, 'error', reason));
+      return response.redirect(this.dashboardRedirectUrl('error', reason));
     }
   }
 
   @Get('picker-config')
-  pickerConfig(@Query('company_id') companyId = 'sabero') {
+  pickerConfig(@TenantId() companyId: string) {
     return {
       company_id: companyId,
       client_id: this.config.get<string>('GOOGLE_CLIENT_ID') || null,
@@ -65,7 +70,7 @@ export class GoogleIntegrationController {
     };
   }
 
-  private dashboardRedirectUrl(companyId: string, status: 'connected' | 'error', reason?: string) {
+  private dashboardRedirectUrl(status: 'connected' | 'error', reason?: string) {
     const configuredUrl =
       this.config.get<string>('AGENT_DASHBOARD_URL') ||
       this.config.get<string>('FRONTEND_BASE_URL') ||
@@ -76,7 +81,6 @@ export class GoogleIntegrationController {
       : configuredUrl;
     const url = new URL(baseUrl);
 
-    url.searchParams.set('company_id', companyId);
     url.searchParams.set('google', status);
     if (reason) url.searchParams.set('reason', reason);
 

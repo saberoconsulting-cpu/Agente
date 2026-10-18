@@ -5,6 +5,7 @@ import { AuthService } from '../auth/auth.service';
 import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
 import { OAuthTokenCryptoService } from '../security/oauth-token-crypto.service';
+import { AuthTokenPayload } from '../auth/token';
 
 export type WhatsappConnection = {
   id: string;
@@ -38,7 +39,7 @@ export class WhatsappConnectionsService {
     private readonly crypto: OAuthTokenCryptoService,
   ) {}
 
-  getEmbeddedSignupConfig(authorization: string | undefined) {
+  getEmbeddedSignupConfig(authorization: string | AuthTokenPayload | undefined) {
     this.requester(authorization);
     const appId = this.metaAppId();
     const configId = this.config.get<string>('WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID')
@@ -56,7 +57,7 @@ export class WhatsappConnectionsService {
     };
   }
 
-  async listForAuthorization(authorization: string | undefined) {
+  async listForAuthorization(authorization: string | AuthTokenPayload | undefined) {
     const requester = this.requester(authorization);
     const result = await this.db.query<WhatsappConnection>(
       `select id, company_id, meta_app_id, waba_id, phone_number_id,
@@ -71,7 +72,7 @@ export class WhatsappConnectionsService {
   }
 
   async upsertConnected(input: {
-    authorization?: string;
+    authorization?: string | AuthTokenPayload;
     metaAppId?: string;
     wabaId: string;
     phoneNumberId: string;
@@ -152,7 +153,7 @@ export class WhatsappConnectionsService {
   }
 
   async completeEmbeddedSignup(input: {
-    authorization?: string;
+    authorization?: string | AuthTokenPayload;
     code: string;
     wabaId?: string;
     phoneNumberId?: string;
@@ -190,7 +191,7 @@ export class WhatsappConnectionsService {
     });
   }
 
-  async revoke(authorization: string | undefined, id: string, reason?: string) {
+  async revoke(authorization: string | AuthTokenPayload | undefined, id: string, reason?: string) {
     const requester = this.requester(authorization);
     this.assertAdmin(requester.role);
 
@@ -251,7 +252,8 @@ export class WhatsappConnectionsService {
     return payload.access_token;
   }
 
-  private requester(authorization: string | undefined) {
+  private requester(authorization: string | AuthTokenPayload | undefined) {
+    if (authorization && typeof authorization !== 'string') return authorization;
     const token = authorization?.replace(/^Bearer\s+/i, '') || '';
     return this.auth.verifyAccessToken(token);
   }

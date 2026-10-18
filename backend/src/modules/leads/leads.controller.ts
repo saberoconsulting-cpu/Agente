@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
 import { LeadsService } from './leads.service';
+import { Roles } from '../security/roles.decorator';
 
 @Controller('leads')
 export class LeadsController {
@@ -19,6 +20,7 @@ export class LeadsController {
   }
 
   @Patch(':id/status')
+  @Roles('owner', 'admin')
   updateStatus(
     @Param('id') id: string,
     @Body() body: { company_id?: string; status: string },

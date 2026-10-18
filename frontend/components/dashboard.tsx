@@ -160,8 +160,12 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
     setLog((items) => [`${new Date().toLocaleTimeString()}  ${message}`, ...items].slice(0, 12));
   }
 
-  function signOut() {
-    clearToken();
+  async function signOut() {
+    try {
+      await apiRequest('/auth/logout', { method: 'POST' });
+    } finally {
+      clearToken();
+    }
     onLogout();
   }
 
@@ -209,7 +213,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
               >
                 <CalendarClock className="mr-2 h-4 w-4" />Calendar
               </Button>
-              <Button variant="ghost" onClick={signOut}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
+              <Button variant="ghost" onClick={() => void signOut()}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
             </div>
           </div>
         </header>

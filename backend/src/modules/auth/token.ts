@@ -6,6 +6,8 @@ export type AuthTokenPayload = {
   company_id: string;
   role: string;
   exp: number;
+  sid?: string;
+  csrf?: string;
 };
 
 export function signToken(payload: AuthTokenPayload, secret: string) {

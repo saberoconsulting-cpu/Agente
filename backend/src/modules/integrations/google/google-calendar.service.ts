@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash, randomBytes } from 'crypto';
 import { google } from 'googleapis';
+import { DatabaseService } from '../../database/database.service';
+import { AuthTokenPayload } from '../../auth/token';
 import { GoogleOAuthTokenService } from './google-oauth-token.service';
 
 export type CalendarAvailabilityInput = {
@@ -27,20 +30,36 @@ export class GoogleCalendarService {
   constructor(
     private readonly tokens: GoogleOAuthTokenService,
     private readonly config: ConfigService,
+    private readonly db: DatabaseService,
   ) {}
 
-  getAuthUrl(companyId = 'sabero'): string {
+  async getAuthUrl(user: AuthTokenPayload): Promise<string> {
     const oauth2Client = this.tokens.createOAuthClient();
+    const state = randomBytes(32).toString('base64url');
+    await this.db.query(
+      `insert into google_oauth_states (state_hash, company_id, user_id, expires_at)
+       values ($1, $2, $3, now() + interval '10 minutes')`,
+      [this.hashState(state), user.company_id, user.sub],
+    );
 
     return oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: this.tokens.getScopes(),
-      state: companyId,
+      state,
     });
   }
 
-  async exchangeCodeForTokens(code: string, companyId = 'sabero') {
+  async exchangeCodeForTokens(code: string, state: string) {
+    const stateResult = await this.db.query<{ company_id: string }>(
+      `update google_oauth_states
+       set used_at = now()
+       where state_hash = $1 and used_at is null and expires_at > now()
+       returning company_id`,
+      [this.hashState(state)],
+    );
+    if (!stateResult.rowCount) throw new Error('Invalid or expired OAuth state');
+    const companyId = stateResult.rows[0].company_id;
     const oauth2Client = this.tokens.createOAuthClient();
     const { tokens } = await oauth2Client.getToken(code);
     await this.tokens.saveTokens(companyId, tokens);
@@ -105,5 +124,9 @@ export class GoogleCalendarService {
     const calendarId = this.config.get<string>('GOOGLE_CALENDAR_ID');
     if (!calendarId) throw new Error('GOOGLE_CALENDAR_ID is required');
     return calendarId;
+  }
+
+  private hashState(state: string) {
+    return createHash('sha256').update(state).digest('hex');
   }
 }

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { CalendarService, CreateMeetingInput } from './calendar.service';
+import { Roles } from '../security/roles.decorator';
 
 @Controller('calendar')
 export class CalendarController {
@@ -20,6 +21,7 @@ export class CalendarController {
   }
 
   @Post('meetings')
+  @Roles('owner', 'admin')
   createMeeting(@Body() body: CreateMeetingInput) {
     return this.calendar.createMeeting({
       ...body,

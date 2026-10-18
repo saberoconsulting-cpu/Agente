@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiRequest, getToken, SessionUser } from '../lib/api';
+import { apiRequest, SessionUser } from '../lib/api';
 import { DashboardApp } from '../components/dashboard';
 import { LoginScreen } from '../components/login';
 
@@ -11,11 +11,6 @@ export default function HomePage() {
 
   useEffect(() => {
     async function check() {
-      const token = getToken();
-      if (!token) {
-        setReady(true);
-        return;
-      }
       try {
         await apiRequest<SessionUser>('/auth/me');
         setAuthenticated(true);

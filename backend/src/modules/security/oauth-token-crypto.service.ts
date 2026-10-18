@@ -41,9 +41,8 @@ export class OAuthTokenCryptoService {
   }
 
   private encryptionKey() {
-    const secret = this.config.get<string>('OAUTH_TOKEN_ENCRYPTION_KEY')
-      || this.config.get<string>('DATABASE_URL');
-    if (!secret) throw new Error('OAUTH_TOKEN_ENCRYPTION_KEY is required');
+    const secret = this.config.get<string>('OAUTH_TOKEN_ENCRYPTION_KEY');
+    if (!secret || secret.length < 32) throw new Error('OAUTH_TOKEN_ENCRYPTION_KEY must be at least 32 characters');
     return createHash('sha256').update(secret).digest();
   }
 }

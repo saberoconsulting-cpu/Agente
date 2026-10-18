@@ -392,6 +392,59 @@ create table if not exists admin_users (
 
 create index if not exists admin_users_company_idx
   on admin_users (company_id);
+
+-- Added incrementally to preserve existing installations that used the legacy bootstrap script.
+create table if not exists auth_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references admin_users(id) on delete cascade,
+  refresh_token_hash text not null unique,
+  csrf_token_hash text not null,
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists auth_sessions_active_user_idx
+  on auth_sessions (user_id, expires_at) where revoked_at is null;
+
+create table if not exists google_oauth_states (
+  id uuid primary key default gen_random_uuid(),
+  state_hash text not null unique,
+  company_id text not null references companies(id),
+  user_id uuid not null references admin_users(id),
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists google_oauth_states_active_idx
+  on google_oauth_states (expires_at) where used_at is null;
+
+create table if not exists job_queue (
+  id uuid primary key default gen_random_uuid(),
+  job_type text not null,
+  company_id text not null references companies(id),
+  dedupe_key text,
+  payload jsonb not null default '{}'::jsonb,
+  run_at timestamptz not null default now(),
+  status text not null default 'pending',
+  attempts integer not null default 0,
+  error_message text,
+  locked_at timestamptz,
+  lock_expires_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (job_type, company_id, run_at),
+  unique (job_type, company_id, dedupe_key)
+);
+
+alter table job_queue add column if not exists dedupe_key text;
+create unique index if not exists job_queue_active_dedupe_idx
+  on job_queue (job_type, company_id, dedupe_key) where dedupe_key is not null;
+
+create index if not exists job_queue_pending_idx
+  on job_queue (status, run_at) where status = 'pending';
 `;
 
 async function main() {
@@ -399,7 +452,9 @@ async function main() {
 
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: process.env.DATABASE_SSL === 'false'
+      ? false
+      : { rejectUnauthorized: process.env.NODE_ENV === 'production', ...(process.env.DATABASE_SSL_CA ? { ca: process.env.DATABASE_SSL_CA } : {}) },
   });
 
   try {

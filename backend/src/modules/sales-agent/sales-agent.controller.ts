@@ -1,5 +1,6 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { SalesAgentService } from './sales-agent.service';
+import { Roles } from '../security/roles.decorator';
 
 type TestMessageBody = {
   company_id?: string;
@@ -13,6 +14,7 @@ export class SalesAgentController {
   constructor(private readonly salesAgent: SalesAgentService) {}
 
   @Post('test-message')
+  @Roles('owner', 'admin')
   testMessage(@Body() body: TestMessageBody) {
     return this.salesAgent.respondToMessage({
       companyId: body.company_id || 'sabero',
@@ -23,6 +25,7 @@ export class SalesAgentController {
   }
 
   @Post('opportunity-brief')
+  @Roles('owner', 'admin')
   createOpportunityBrief(
     @Body()
     body: {

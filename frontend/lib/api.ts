@@ -7,13 +7,9 @@ export type SessionUser = {
 };
 
 export type LoginResponse = {
-  access_token: string;
-  token_type: 'Bearer';
   expires_in: number;
   user: SessionUser;
 };
-
-const TOKEN_KEY = 'sabero_agent_auth_token';
 
 export function apiBase() {
   if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_API_BASE || '';
@@ -21,27 +17,27 @@ export function apiBase() {
 }
 
 export function getToken() {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return null;
 }
 
 export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
+  void token;
 }
 
 export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
+  // Authentication is held in HttpOnly cookies and can only be cleared by /auth/logout.
 }
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+  const csrf = typeof document === 'undefined' ? null : document.cookie.split('; ').find((item) => item.startsWith('sabero_csrf='))?.split('=')[1];
   const response = await fetch(`${apiBase()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(['POST', 'PUT', 'PATCH', 'DELETE'].includes((options.method || 'GET').toUpperCase()) && csrf ? { 'X-CSRF-Token': csrf } : {}),
       ...(options.headers || {}),
     },
+    credentials: 'same-origin',
   });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
@@ -57,6 +53,5 @@ export async function login(email: string, password: string) {
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.message || 'No se pudo iniciar sesion');
-  setToken(payload.access_token);
   return payload as LoginResponse;
 }

@@ -12,9 +12,12 @@ export class DatabaseService implements OnModuleDestroy {
       throw new Error('DATABASE_URL is required');
     }
 
+    const isProduction = this.config.get<string>('NODE_ENV') === 'production';
+    const ca = this.config.get<string>('DATABASE_SSL_CA');
+    const sslEnabled = this.config.get<string>('DATABASE_SSL') !== 'false';
     this.pool = new Pool({
       connectionString,
-      ssl: { rejectUnauthorized: false },
+      ssl: sslEnabled ? { rejectUnauthorized: isProduction, ...(ca ? { ca } : {}) } : false,
     });
   }
 
