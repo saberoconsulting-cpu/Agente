@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SABERO AI Sales Engine</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+  </head>
+  <body>
+    <section class="login-screen" id="loginScreen">
+      <form class="login-panel" id="loginForm">
+        <div class="brand login-brand">
+          <span class="brand-mark">S</span>
+          <div>
+            <strong>SABERO AI</strong>
+            <small>Sales Engine</small>
+          </div>
+        </div>
+        <label>Correo<input id="loginEmail" type="email" autocomplete="username" required /></label>
+        <label>Contrasena<input id="loginPassword" type="password" autocomplete="current-password" required /></label>
+        <button id="loginButton" type="submit">Ingresar</button>
+        <p class="login-error" id="loginError"></p>
+      </form>
+    </section>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">S</span>
+          <div>
+            <strong>SABERO AI</strong>
+            <small>Sales Engine</small>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Vistas del agente">
+          <button class="nav-item active" type="button" data-view="overview">Resumen</button>
+          <button class="nav-item" type="button" data-view="knowledge">Conocimiento</button>
+          <button class="nav-item" type="button" data-view="agent">Agente</button>
+          <button class="nav-item" type="button" data-view="channels">Canales</button>
+          <button class="nav-item" type="button" data-view="ops">Operaciones</button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Tenant activo: sabero</p>
+            <h1 id="viewTitle">Resumen</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="status" id="apiStatus">Backend...</div>
+            <button id="logoutButton" type="button" class="ghost">Salir</button>
+          </div>
+        </header>
+
+        <section class="view active" id="view-overview">
+          <div class="metrics-grid">
+            <article class="metric"><span>Backend</span><strong id="metricBackend">...</strong></article>
+            <article class="metric"><span>Google</span><strong id="metricGoogle">...</strong></article>
+            <article class="metric"><span>Documentos</span><strong id="metricFiles">0</strong></article>
+            <article class="metric"><span>Leads</span><strong id="metricLeads">0</strong></article>
+          </div>
+          <section class="panel">
+            <div class="section-title">
+              <div>
+                <h2>Finalidad del producto</h2>
+                <p>Agente comercial configurable para cualquier empresa, vendible independiente o integrado al CRM por API.</p>
+              </div>
+            </div>
+            <div class="principles">
+              <span>Multiempresa</span>
+              <span>RAG por tenant</span>
+              <span>WhatsApp-first</span>
+              <span>CRM-ready</span>
+              <span>Politicas aisladas</span>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Actividad reciente</h2>
+              <span class="tenant" id="metricMeetings">0 reuniones</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Recurso</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="eventsTable">
+                  <tr><td colspan="3" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-knowledge">
+          <section class="panel">
+            <div class="section-title">
+              <div>
+                <h2>Conocimiento comercial</h2>
+                <p>Autoriza documentos de Drive, indexalos y dejalos listos para el agente.</p>
+              </div>
+              <span class="tenant">Tenant: sabero</span>
+            </div>
+            <div class="actions">
+              <button id="connectGoogle" type="button">Conectar Google</button>
+              <button id="pickFiles" type="button">Seleccionar archivos</button>
+              <button id="refreshFiles" type="button" class="secondary">Actualizar lista</button>
+              <button id="syncDrive" type="button" class="secondary">Sincronizar Drive</button>
+            </div>
+            <div class="notice" id="pickerNotice"></div>
+          </section>
+
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Archivos autorizados</h2>
+              <span id="fileCount">0 archivos</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Documento</th>
+                    <th>Tipo</th>
+                    <th>Estado</th>
+                    <th>Actualizado</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="filesTable">
+                  <tr><td colspan="5" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-agent">
+          <section class="panel">
+            <div class="section-title">
+              <div>
+                <h2>Configuracion del agente</h2>
+                <p>Parametros comerciales por empresa. En este MVP quedan visibles como contrato de configuracion.</p>
+              </div>
+            </div>
+            <div class="settings-grid">
+              <label>Nombre del agente<input id="agentName" /></label>
+              <label>Tono comercial<input id="agentTone" /></label>
+              <label>Proveedor LLM<input id="agentProvider" /></label>
+              <label>Modelo<input id="agentModel" /></label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Reglas comerciales</h2>
+              <button id="saveAgentSettings" type="button">Guardar</button>
+            </div>
+            <textarea id="agentRules" rows="7"></textarea>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Servicios vendibles</h2>
+              <span id="servicesCount" class="tenant">0 servicios</span>
+            </div>
+            <div class="inline-form">
+              <input id="serviceName" placeholder="Nombre del servicio" />
+              <input id="serviceDescription" placeholder="Descripcion comercial" />
+              <button id="saveService" type="button">Agregar</button>
+            </div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Servicio</th>
+                    <th>Estado</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="servicesTable">
+                  <tr><td colspan="3" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Politicas comerciales</h2>
+              <span id="policiesCount" class="tenant">0 politicas</span>
+            </div>
+            <div class="inline-form">
+              <input id="policyKey" placeholder="Clave: pricing, scope..." />
+              <input id="policyText" placeholder="Regla que el agente debe obedecer" />
+              <button id="savePolicy" type="button">Agregar</button>
+            </div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Politica</th>
+                    <th>Estado</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="policiesTable">
+                  <tr><td colspan="3" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Leads recientes</h2>
+              <span id="leadCount" class="tenant">0 leads</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lead</th>
+                    <th>Estado</th>
+                    <th>Calificacion</th>
+                    <th>Ultima actividad</th>
+                  </tr>
+                </thead>
+                <tbody id="leadsTable">
+                  <tr><td colspan="4" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-channels">
+          <section class="panel">
+            <div class="section-title">
+              <div>
+                <h2>Canales e integraciones</h2>
+                <p>El agente atiende por WhatsApp real y usa Calendar/Drive como herramientas del tenant.</p>
+              </div>
+            </div>
+            <div class="integration-list">
+              <div><strong>WhatsApp Cloud API</strong><span>Webhook y respuesta inicial activos</span></div>
+              <div><strong>Google Calendar</strong><span>OAuth conectado para reuniones</span></div>
+              <div><strong>Google Drive</strong><span>OAuth conectado; Picker pendiente de API key/App ID</span></div>
+              <div><strong>CRM API</strong><span>Contrato futuro, no bloquea el agente</span></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="section-title compact">
+              <h2>Conversaciones WhatsApp</h2>
+              <span id="conversationCount" class="tenant">0 conversaciones</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Contacto</th>
+                    <th>Canal</th>
+                    <th>Mensajes</th>
+                    <th>Ultima actividad</th>
+                  </tr>
+                </thead>
+                <tbody id="conversationsTable">
+                  <tr><td colspan="4" class="empty">Cargando...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="view-ops">
+          <section class="panel log-panel">
+            <div class="section-title compact">
+              <h2>Registro operativo</h2>
+              <button id="clearLog" type="button" class="ghost">Limpiar</button>
+            </div>
+            <pre id="log"></pre>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

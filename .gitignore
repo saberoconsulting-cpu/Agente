@@ -1,0 +1,41 @@
+# Dependencias
+node_modules/
+
+# Compilacion y caches (NestJS, Next.js y Vite)
+dist/
+.next/
+out/
+.vite/
+.cache/
+*.tsbuildinfo
+next-env.d.ts
+
+# Variables de entorno; conservar las plantillas
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs y cobertura
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+.nyc_output/
+
+# Configuracion local de Docker y datos de Certbot
+/.docker-config/
+/certbot/conf/
+/certbot/www/
+
+# Archivos locales del editor y del sistema
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
