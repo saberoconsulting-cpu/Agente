@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { QueueService } from '../queue/queue.service';
 
 @Injectable()
 export class SyncService {
-  enqueueDriveFileSync() {
-    throw new Error('Drive sync queue is not implemented yet');
+  constructor(private readonly queue: QueueService) {}
+
+  async enqueueDriveFileSync(companyId: string) {
+    await this.queue.enqueue('drive.sync', companyId, {}, new Date(), 'drive-sync');
+    return { accepted: true };
   }
 }

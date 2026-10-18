@@ -21,6 +21,7 @@ import { SecurityModule } from './security/security.module';
 import { SyncModule } from './sync/sync.module';
 import { SalesAgentModule } from './sales-agent/sales-agent.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
+import { QueueModule } from './queue/queue.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { WhatsappModule } from './whatsapp/whatsapp.module';
     EventsModule,
     AuditModule,
     AuthModule,
+    QueueModule,
     SecurityModule,
     DashboardModule,
     LeadsModule,

@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
 import { PDFParse } from 'pdf-parse';
@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import { DatabaseService } from '../database/database.service';
 import { GoogleOAuthTokenService } from '../integrations/google/google-oauth-token.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
+import { QueueService } from '../queue/queue.service';
 
 export type RegisterDriveFileInput = {
   company_id?: string;
@@ -30,34 +31,15 @@ type DriveFileRow = {
 };
 
 @Injectable()
-export class GoogleDriveService implements OnModuleInit, OnModuleDestroy {
-  private syncTimer?: NodeJS.Timeout;
+export class GoogleDriveService {
 
   constructor(
     private readonly db: DatabaseService,
     private readonly googleTokens: GoogleOAuthTokenService,
     private readonly knowledge: KnowledgeService,
     private readonly config: ConfigService,
+    private readonly queue: QueueService,
   ) {}
-
-  onModuleInit() {
-    if (this.config.get<string>('DRIVE_SYNC_ENABLED') !== 'true') return;
-
-    const intervalMs = Number(this.config.get<string>('DRIVE_SYNC_INTERVAL_MS') || 900000);
-    if (intervalMs < 60000) return;
-
-    this.syncTimer = setInterval(() => {
-      void this.syncAllCompanies().catch((error) => {
-        console.warn('Scheduled Drive sync failed', {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    }, intervalMs);
-  }
-
-  onModuleDestroy() {
-    if (this.syncTimer) clearInterval(this.syncTimer);
-  }
 
   async registerAuthorizedFile(input: RegisterDriveFileInput) {
     const result = await this.db.query<DriveFileRow>(
@@ -88,7 +70,15 @@ export class GoogleDriveService implements OnModuleInit, OnModuleDestroy {
       ],
     );
 
-    return result.rows[0];
+    const file = result.rows[0];
+    await this.queue.enqueue('drive.sync', file.company_id, { file_id: file.id }, new Date(), 'drive-sync');
+    return file;
+  }
+
+  async enqueueAllCompanies() {
+    if (this.config.get<string>('DRIVE_SYNC_ENABLED') !== 'true') return;
+    const companies = await this.db.query<{ company_id: string }>('select distinct company_id from google_drive_files where trashed = false');
+    await Promise.all(companies.rows.map((row) => this.queue.enqueue('drive.sync', row.company_id, {}, new Date(), 'drive-sync')));
   }
 
   async listAuthorizedFiles(companyId: string) {

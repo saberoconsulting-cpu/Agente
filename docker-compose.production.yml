@@ -26,6 +26,17 @@ services:
       - "3000"
     restart: unless-stopped
 
+  worker:
+    build:
+      context: ./backend
+    env_file:
+      - ./backend/.env.production
+    command: ["npm", "run", "start:worker"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27-alpine
     depends_on:

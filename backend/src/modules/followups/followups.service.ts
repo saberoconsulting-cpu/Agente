@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
 import { EventsService } from '../events/events.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
+import { QueueService } from '../queue/queue.service';
 
 export type ScheduleFollowupInput = {
   company_id?: string;
@@ -23,6 +24,7 @@ export class FollowupsService {
     private readonly config: ConfigService,
     private readonly whatsapp: WhatsappService,
     private readonly events: EventsService,
+    private readonly queue: QueueService,
   ) {}
 
   async schedule(input: ScheduleFollowupInput) {
@@ -80,6 +82,7 @@ export class FollowupsService {
         scheduled_at: input.scheduled_at,
       },
     });
+    await this.queue.enqueue('followup.process', companyId, {}, new Date(input.scheduled_at));
 
     return followup;
   }
