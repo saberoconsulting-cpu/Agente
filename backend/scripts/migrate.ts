@@ -463,6 +463,12 @@ create table if not exists opportunity_activities (
   activity_type text not null, content text not null, created_at timestamptz not null default now()
 );
 create index if not exists opportunity_activities_opportunity_idx on opportunity_activities(opportunity_id, created_at desc);
+create table if not exists opportunity_proposals (
+  id uuid primary key default gen_random_uuid(), company_id text not null references companies(id),
+  opportunity_id uuid not null references opportunities(id) on delete cascade, status text not null default 'draft',
+  title text not null, content text not null, created_by uuid references admin_users(id), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index if not exists opportunity_proposals_opportunity_idx on opportunity_proposals(opportunity_id, created_at desc);
 `;
 
 async function main() {

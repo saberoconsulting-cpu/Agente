@@ -27,7 +27,8 @@ export class OpportunitiesService {
     const opportunity = await this.db.query(`select * from opportunities where id = $1 and company_id = $2`, [id, companyId]);
     if (!opportunity.rowCount) throw new NotFoundException('Opportunity not found');
     const activities = await this.db.query(`select * from opportunity_activities where opportunity_id = $1 order by created_at desc`, [id]);
-    return { ...opportunity.rows[0], activities: activities.rows };
+    const proposals = await this.db.query(`select id, status, title, content, created_at, updated_at from opportunity_proposals where opportunity_id = $1 and company_id = $2 order by created_at desc`, [id, companyId]);
+    return { ...opportunity.rows[0], activities: activities.rows, proposals: proposals.rows };
   }
 
   async create(companyId: string, actorId: string, input: { lead_id: string; conversation_id?: string; service_interest?: string }) {
@@ -71,6 +72,27 @@ export class OpportunitiesService {
     await this.db.query(`update opportunities set next_action = coalesce($3, next_action), last_activity_at = now(), updated_at = now() where id = $1 and company_id = $2`, [id, companyId, nextAction || null]);
     await this.activity(companyId, id, actorId, 'opportunity.note', content);
     return this.detail(companyId, id);
+  }
+
+  async handoff(companyId: string, id: string, assigneeId: string, actorId: string) {
+    const opportunity = await this.detail(companyId, id);
+    if (opportunity.score < 60) throw new BadRequestException('Only opportunities with score 60 or higher can be handed off');
+    await this.assign(companyId, id, assigneeId, actorId);
+    await this.activity(companyId, id, actorId, 'opportunity.handoff', 'Lead caliente derivado a vendedor humano');
+    return this.detail(companyId, id);
+  }
+
+  async createProposal(companyId: string, id: string, actorId: string) {
+    const opportunity = await this.db.query<{ service_interest: string | null; score_signals: Record<string, boolean>; lead_name: string | null }>(
+      `select o.service_interest, o.score_signals, l.name as lead_name from opportunities o join leads l on l.id = o.lead_id where o.id = $1 and o.company_id = $2`, [id, companyId]);
+    if (!opportunity.rowCount) throw new NotFoundException('Opportunity not found');
+    const item = opportunity.rows[0];
+    const title = `Propuesta inicial${item.service_interest ? ` · ${item.service_interest}` : ''}`;
+    const content = [`Cliente: ${item.lead_name || 'Prospecto'}.`, `Servicio de interés: ${item.service_interest || 'por definir'}.`, '', 'Objetivo y necesidad:', item.score_signals.need ? 'Necesidad comercial identificada durante la conversación.' : 'Validar necesidad en reunión de discovery.', '', 'Alcance inicial:', item.score_signals.scope ? 'Preparar alcance preliminar según lo conversado.' : 'Levantar alcance técnico y comercial.', '', 'Siguiente paso recomendado:', 'Agendar reunión de discovery para confirmar alcance, inversión, responsables y cronograma.'].join('\n');
+    const result = await this.db.query(`insert into opportunity_proposals (company_id, opportunity_id, title, content, created_by) values ($1,$2,$3,$4,$5) returning *`, [companyId, id, title, content, actorId]);
+    await this.changeStage(companyId, id, 'propuesta', actorId);
+    await this.activity(companyId, id, actorId, 'opportunity.proposal_created', 'Borrador de propuesta generado');
+    return result.rows[0];
   }
 
   private score(q: Record<string, string>, updatedAt: string) {
