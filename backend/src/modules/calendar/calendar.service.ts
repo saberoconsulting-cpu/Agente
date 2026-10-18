@@ -138,6 +138,14 @@ export class CalendarService {
       html_link: event.html_link,
     };
 
+    if (input.lead_id) {
+      await this.db.query(
+        `update opportunities set stage = 'reunion_agendada', last_activity_at = now(), updated_at = now()
+         where company_id = $1 and lead_id = $2 and stage in ('nuevo', 'calificado', 'reunion_propuesta')`,
+        [companyId, input.lead_id],
+      );
+    }
+
     await this.events.record({
       companyId,
       eventType: 'meeting.booked',

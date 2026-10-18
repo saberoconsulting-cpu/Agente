@@ -11,6 +11,7 @@ export type DashboardSummary = {
     google_connected: boolean;
     drive_files: number;
   };
+  opportunities?: { open: number; hot: number; unassigned: number; proposed: number; won: number };
   recent_events: Array<{
     event_type: string;
     aggregate_type: string | null;
@@ -18,6 +19,8 @@ export type DashboardSummary = {
     created_at: string;
   }>;
 };
+
+export type Opportunity = { id: string; lead_name: string; whatsapp_number: string; stage: string; score: number; assignee_email?: string; service_interest?: string; next_action?: string; last_activity_at: string; };
 
 export type AgentSettings = {
   settings: {

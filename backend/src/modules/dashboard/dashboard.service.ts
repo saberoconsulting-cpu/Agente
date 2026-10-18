@@ -14,6 +14,7 @@ export class DashboardService {
       followups,
       events,
       integrations,
+      opportunities,
     ] = await Promise.all([
       this.db.query<{ count: string }>('select count(*)::text from leads where company_id = $1', [companyId]),
       this.db.query<{ count: string }>('select count(*)::text from conversations where company_id = $1', [companyId]),
@@ -47,6 +48,12 @@ export class DashboardService {
            (select count(*)::text from google_drive_files where company_id = $1) as drive_files`,
         [companyId],
       ),
+      this.db.query<{ open: string; hot: string; unassigned: string; proposed: string; won: string }>(
+        `select count(*) filter (where stage not in ('ganado','perdido'))::text as open,
+          count(*) filter (where score >= 60 and stage = 'nuevo')::text as hot,
+          count(*) filter (where assignee_id is null and stage not in ('ganado','perdido'))::text as unassigned,
+          count(*) filter (where stage = 'propuesta')::text as proposed,
+          count(*) filter (where stage = 'ganado')::text as won from opportunities where company_id = $1`, [companyId]),
     ]);
 
     return {
@@ -62,6 +69,7 @@ export class DashboardService {
         google_connected: integrations.rows[0]?.google_connected || false,
         drive_files: Number(integrations.rows[0]?.drive_files || 0),
       },
+      opportunities: { open: Number(opportunities.rows[0]?.open || 0), hot: Number(opportunities.rows[0]?.hot || 0), unassigned: Number(opportunities.rows[0]?.unassigned || 0), proposed: Number(opportunities.rows[0]?.proposed || 0), won: Number(opportunities.rows[0]?.won || 0) },
       recent_events: events.rows,
     };
   }

@@ -22,6 +22,7 @@ import { SyncModule } from './sync/sync.module';
 import { SalesAgentModule } from './sales-agent/sales-agent.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { QueueModule } from './queue/queue.module';
+import { OpportunitiesModule } from './opportunities/opportunities.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { QueueModule } from './queue/queue.module';
     SalesAgentModule,
     CalendarModule,
     FollowupsModule,
+    OpportunitiesModule,
   ],
   controllers: [HealthController],
 })

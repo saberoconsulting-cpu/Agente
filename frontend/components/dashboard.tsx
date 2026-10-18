@@ -19,9 +19,10 @@ import {
   Trash2,
   Users,
   Zap,
+  Target,
 } from 'lucide-react';
 import { apiRequest, clearToken, SessionUser } from '../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting } from '../lib/types';
+import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity } from '../lib/types';
 import { Brand } from './brand';
 import { Button, Panel, StatusPill } from './ui';
 
@@ -96,6 +97,7 @@ type WhatsAppSignupAssets = {
 
 const views = [
   ['overview', 'Centro de mando', Bot],
+  ['opportunities', 'Oportunidades', Target],
   ['links', 'Gestion y vinculacion', Link2],
   ['knowledge', 'Conocimiento', Brain],
   ['agent', 'Agente comercial', Settings2],
@@ -110,6 +112,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [users, setUsers] = useState<SessionUser[]>([]);
   const [log, setLog] = useState<string[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
 
   const companyId = user?.company_id || 'sabero';
 
@@ -137,7 +140,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   async function bootstrap() {
     const current = await apiRequest<SessionUser>('/auth/me');
     setUser(current);
-    await Promise.all([loadSummary(current.company_id), loadSettings(current.company_id), loadFiles(current.company_id), loadUsers(current.company_id)]);
+    await Promise.all([loadSummary(current.company_id), loadSettings(current.company_id), loadFiles(current.company_id), loadUsers(current.company_id), loadOpportunities()]);
   }
 
   async function loadSummary(id = companyId) {
@@ -155,6 +158,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   async function loadUsers(id = companyId) {
     setUsers(await apiRequest<SessionUser[]>(`/auth/users?company_id=${id}`));
   }
+  async function loadOpportunities() { setOpportunities(await apiRequest<Opportunity[]>('/opportunities')); }
 
   function pushLog(message: string) {
     setLog((items) => [`${new Date().toLocaleTimeString()}  ${message}`, ...items].slice(0, 12));
@@ -220,6 +224,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
 
         <div className="grid gap-6 p-5 xl:p-10">
           {view === 'overview' && <Overview summary={summary} log={log} />}
+          {view === 'opportunities' && <Opportunities items={opportunities} reload={loadOpportunities} />}
           {view === 'links' && <Links companyId={companyId} pushLog={pushLog} reload={() => loadSummary()} />}
           {view === 'knowledge' && <Knowledge companyId={companyId} files={files} reload={loadFiles} pushLog={pushLog} />}
           {view === 'agent' && <AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} />}
@@ -273,6 +278,12 @@ function Overview({ summary, log }: { summary: DashboardSummary | null; log: str
       </div>
     </>
   );
+}
+
+function Opportunities({ items, reload }: { items: Opportunity[]; reload: () => Promise<void> }) {
+  const stages = [['nuevo', 'Nuevas'], ['calificado', 'Calificadas'], ['reunion_propuesta', 'Reunión'], ['reunion_agendada', 'Agendadas'], ['propuesta', 'Propuestas'], ['ganado', 'Ganadas']] as const;
+  async function move(id: string, stage: string) { await apiRequest(`/opportunities/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stage }) }); await reload(); }
+  return <div className="grid gap-6"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-[.22em] text-sabero-crimson">Embudo comercial</p><h2 className="mt-2 text-3xl font-black text-sabero-navy">Oportunidades</h2></div><Button variant="ghost" onClick={() => void reload()}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button></div><div className="grid gap-4 xl:grid-cols-3">{stages.map(([stage, label]) => <Panel key={stage}><h3 className="font-black text-sabero-navy">{label}</h3><div className="mt-4 grid gap-3">{items.filter((item) => item.stage === stage).map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-sabero-navy">{item.lead_name || item.whatsapp_number}</p><p className="mt-1 text-xs font-bold text-slate-500">Score {item.score} · {item.assignee_email || 'Sin asignar'}</p><div className="mt-3">{stage === 'nuevo' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'calificado')}>Confirmar</Button>}{stage === 'calificado' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'reunion_propuesta')}>Proponer reunión</Button>}{stage === 'propuesta' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'ganado')}>Marcar ganada</Button>}</div></div>)}</div></Panel>)}</div></div>;
 }
 
 function Links({ companyId, pushLog, reload }: { companyId: string; pushLog: (m: string) => void; reload: () => void }) {

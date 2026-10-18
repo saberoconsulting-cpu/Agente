@@ -445,6 +445,24 @@ create unique index if not exists job_queue_active_dedupe_idx
 
 create index if not exists job_queue_pending_idx
   on job_queue (status, run_at) where status = 'pending';
+
+create table if not exists opportunities (
+  id uuid primary key default gen_random_uuid(), company_id text not null references companies(id),
+  lead_id uuid not null references leads(id), conversation_id uuid references conversations(id),
+  assignee_id uuid references admin_users(id), stage text not null default 'nuevo', score integer not null default 0,
+  score_signals jsonb not null default '{}'::jsonb, service_interest text, estimated_value numeric,
+  next_action text, loss_reason text, last_activity_at timestamptz not null default now(),
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  check (stage in ('nuevo','calificado','reunion_propuesta','reunion_agendada','propuesta','ganado','perdido'))
+);
+create unique index if not exists opportunities_one_open_lead_idx on opportunities(company_id, lead_id) where stage not in ('ganado','perdido');
+create index if not exists opportunities_company_stage_idx on opportunities(company_id, stage, score desc);
+create table if not exists opportunity_activities (
+  id uuid primary key default gen_random_uuid(), company_id text not null references companies(id),
+  opportunity_id uuid not null references opportunities(id) on delete cascade, actor_id uuid references admin_users(id),
+  activity_type text not null, content text not null, created_at timestamptz not null default now()
+);
+create index if not exists opportunity_activities_opportunity_idx on opportunity_activities(opportunity_id, created_at desc);
 `;
 
 async function main() {
