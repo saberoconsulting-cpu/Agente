@@ -5,7 +5,7 @@ import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, Mess
 import { apiRequest, SessionUser } from '../../lib/api';
 import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
 import { Button, Panel, StatusPill } from '../../components/ui';
-import type { PickerConfig, PickerDocument, TokenClient } from '../integrations/types';
+import type { PickerConfig, PickerDocument, TokenClient } from '../../lib/integrations';
 
 export function Knowledge({ companyId, files, reload, pushLog }: { companyId: string; files: DriveFile[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);

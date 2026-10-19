@@ -5,7 +5,7 @@ import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, Mess
 import { apiRequest, SessionUser } from '../../lib/api';
 import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
 import { Button, Panel, StatusPill } from '../../components/ui';
-import type { FacebookLoginResponse, WhatsAppConnection, WhatsAppEmbeddedSignupConfig, WhatsAppSignupAssets } from './types';
+import type { FacebookLoginResponse, WhatsAppConnection, WhatsAppEmbeddedSignupConfig, WhatsAppSignupAssets } from '../../lib/integrations';
 
 export function Links({ companyId, pushLog, reload }: { companyId: string; pushLog: (m: string) => void; reload: () => void }) {
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsAppEmbeddedSignupConfig | null>(null);
