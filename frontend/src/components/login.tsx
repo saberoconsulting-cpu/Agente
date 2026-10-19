@@ -76,6 +76,18 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
           </p>
         </div>
         <div className="absolute bottom-[14%] left-[26%] z-10 w-[68%] text-sabero-navy">
+          <div className="relative mb-5 ml-auto mr-0 flex h-60 w-60 items-end justify-center sm:h-64 sm:w-64">
+            <div className="absolute bottom-2 left-1/2 h-7 w-56 -translate-x-1/2 rounded-[50%] bg-gradient-to-r from-sabero-electric/10 via-sabero-cyan to-sabero-electric/10 blur-[2px] shadow-[0_0_36px_rgba(56,213,255,0.55)] sm:w-60" />
+            <div className="absolute bottom-5 left-1/2 h-4 w-44 -translate-x-1/2 rounded-[50%] bg-sabero-navy/20 blur-[6px] sm:w-48" />
+            <Image
+              src="/bots.png"
+              alt="Asistente SABERO"
+              width={240}
+              height={240}
+              sizes="240px"
+              className="relative z-10 mb-5 h-52 w-52 rounded-full object-cover sm:h-56 sm:w-56"
+            />
+          </div>
           <div className="mb-4 flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-sabero-navy/75">
             <span className="h-2 w-2 rounded-full bg-sabero-electric shadow-[0_0_12px_rgba(16,135,255,0.55)]" />
             Todo conectado

@@ -4,6 +4,7 @@ node_modules/
 # Compilacion y caches (NestJS, Next.js y Vite)
 dist/
 .next/
+.next-dev/
 out/
 .vite/
 .cache/
