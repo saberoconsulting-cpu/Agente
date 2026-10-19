@@ -50,4 +50,15 @@ export class LeadsService {
     );
     return result.rows[0] || null;
   }
+
+  async inspectByWhatsAppNumber(companyId: string, phone: string) {
+    const result = await this.db.query(
+      `select l.id as lead_id, l.whatsapp_number, l.qualification, c.id as conversation_id, c.state
+       from leads l join conversations c on c.lead_id = l.id
+       where l.company_id = $1 and l.whatsapp_number = $2
+       order by l.updated_at desc limit 1`,
+      [companyId, phone],
+    );
+    return result.rows;
+  }
 }

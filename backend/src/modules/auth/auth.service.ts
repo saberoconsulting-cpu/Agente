@@ -153,6 +153,19 @@ export class AuthService {
     return result.rows.map((user) => this.safeUser(user));
   }
 
+  async ensureBootstrapOwner(companyId: string, email: string, password: string) {
+    if (password.length < 10) throw new BadRequestException('ADMIN_PASSWORD must be at least 10 characters');
+    const result = await this.db.query<AdminUser>(
+      `insert into admin_users (company_id, email, password_hash, role, active)
+       values ($1, $2, $3, 'owner', true)
+       on conflict (email) do update set password_hash = excluded.password_hash,
+         company_id = excluded.company_id, active = true, updated_at = now()
+       returning id, company_id, email, password_hash, role, active`,
+      [companyId, email, hashPassword(password)],
+    );
+    return this.safeUser(result.rows[0]);
+  }
+
   verifyAccessToken(token: string) {
     const payload = verifyToken(token, this.getSecret());
     if (!payload) throw new UnauthorizedException('Invalid or expired session');

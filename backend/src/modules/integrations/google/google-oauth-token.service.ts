@@ -68,4 +68,14 @@ export class GoogleOAuthTokenService {
     oauth2Client.setCredentials(this.crypto.decryptJson<Credentials>(result.rows[0].encrypted_tokens));
     return oauth2Client;
   }
+
+  async inspectConnection(companyId: string) {
+    const result = await this.db.query(
+      `select company_id, provider_account_email, scopes, connected_at, revoked_at,
+              length(encrypted_tokens) as encrypted_token_length
+       from google_oauth_connections where company_id = $1`,
+      [companyId],
+    );
+    return result.rows;
+  }
 }
