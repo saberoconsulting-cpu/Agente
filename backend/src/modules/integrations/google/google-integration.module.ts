@@ -3,10 +3,11 @@ import { OAuthTokenCryptoService } from '../../security/oauth-token-crypto.servi
 import { GoogleIntegrationController } from './google-integration.controller';
 import { GoogleCalendarService } from './google-calendar.service';
 import { GoogleOAuthTokenService } from './google-oauth-token.service';
+import { GoogleOAuthRepository } from './repositories/google-oauth.repository';
 
 @Module({
   controllers: [GoogleIntegrationController],
-  providers: [GoogleCalendarService, GoogleOAuthTokenService, OAuthTokenCryptoService],
+  providers: [GoogleCalendarService, GoogleOAuthTokenService, GoogleOAuthRepository, OAuthTokenCryptoService],
   exports: [GoogleCalendarService, GoogleOAuthTokenService],
 })
 export class GoogleIntegrationModule {}
