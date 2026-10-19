@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, TooManyRequestsException } from '@nestjs/common';
+import { Body, Controller, Get, HttpException, HttpStatus, Post, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PublicRoute } from '../security/public.decorator';
 import { CurrentUser } from '../security/current-user.decorator';
@@ -29,20 +29,20 @@ export class AuthController {
   }
 
   @Get('me')
-  me(@CurrentUser user: AuthTokenPayload) {
+  me(@CurrentUser() user: AuthTokenPayload) {
     return this.auth.meForPayload(user);
   }
 
   @Get('users')
   @Roles('owner')
-  users(@CurrentUser user: AuthTokenPayload) {
+  users(@CurrentUser() user: AuthTokenPayload) {
     return this.auth.listUsers(user);
   }
 
   @Post('users')
   @Roles('owner')
   createUser(
-    @CurrentUser requester: AuthTokenPayload,
+    @CurrentUser() requester: AuthTokenPayload,
     @Body() body: { email: string; password: string; role?: string },
   ) {
     return this.auth.createUser({
@@ -63,7 +63,7 @@ export class AuthController {
   }
 
   @Post('logout')
-  async logout(@CurrentUser user: AuthTokenPayload, @Res({ passthrough: true }) response: Response) {
+  async logout(@CurrentUser() user: AuthTokenPayload, @Res({ passthrough: true }) response: Response) {
     await this.auth.logoutFromPayload(user);
     for (const name of ['sabero_access', 'sabero_refresh', 'sabero_csrf']) response.clearCookie(name, { path: '/' });
     return { ok: true };
@@ -84,7 +84,7 @@ export class AuthController {
   private assertLoginAllowed(key: string) {
     const record = this.loginAttempts.get(key);
     if (record && record.resetAt > Date.now() && record.count >= 5) {
-      throw new TooManyRequestsException('Too many login attempts; try again later');
+      throw new HttpException('Too many login attempts; try again later', HttpStatus.TOO_MANY_REQUESTS);
     }
   }
 

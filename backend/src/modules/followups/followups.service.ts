@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { toDatabaseShape } from '../../infrastructure/prisma/serialize';
 import { EventsService } from '../events/events.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { QueueService } from '../queue/queue.service';
@@ -22,7 +23,7 @@ export type ScheduleFollowupInput = {
 @Injectable()
 export class FollowupsService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly whatsapp: WhatsappService,
     private readonly events: EventsService,
@@ -39,41 +40,16 @@ export class FollowupsService {
     await this.ensureCanSchedule(companyId, input.recipient);
 
     const maxFollowups = Number(this.config.get<string>('MAX_FOLLOWUPS_PER_LEAD') || 3);
-    const count = await this.db.query<{ count: string }>(
-      `select count(*)::text
-       from followups
-       where company_id = $1 and recipient = $2 and status in ('scheduled', 'sent')`,
-      [companyId, input.recipient],
-    );
+    const count = await this.prisma.followup.count({ where: { companyId, recipient: input.recipient, status: { in: ['scheduled', 'sent'] } } });
 
-    if (Number(count.rows[0].count) >= maxFollowups) {
+    if (count >= maxFollowups) {
       throw new BadRequestException('Maximum followups reached for this recipient');
     }
 
-    const result = await this.db.query(
-      `insert into followups (
-         company_id, lead_id, conversation_id, recipient, message, template_name,
-         scheduled_at, reason, idempotency_key, opportunity_followup_draft_id
-       )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       on conflict (company_id, idempotency_key)
-       do update set updated_at = now()
-       returning *`,
-      [
-        companyId,
-        input.lead_id || null,
-        input.conversation_id || null,
-        input.recipient,
-        input.message,
-        input.template_name || null,
-        input.scheduled_at,
-        input.reason || null,
-        input.idempotency_key || null,
-        input.opportunity_followup_draft_id || null,
-      ],
-    );
-
-    const followup = result.rows[0];
+    const data = { companyId, leadId: input.lead_id || null, conversationId: input.conversation_id || null, recipient: input.recipient, message: input.message, templateName: input.template_name || null, scheduledAt: new Date(input.scheduled_at), reason: input.reason || null, idempotencyKey: input.idempotency_key || null, opportunityFollowupDraftId: input.opportunity_followup_draft_id || null };
+    const followup = input.idempotency_key
+      ? await this.prisma.followup.upsert({ where: { companyId_idempotencyKey: { companyId, idempotencyKey: input.idempotency_key } }, create: data, update: { updatedAt: new Date() } })
+      : await this.prisma.followup.create({ data });
     await this.events.record({
       companyId,
       eventType: 'followup.scheduled',
@@ -88,33 +64,20 @@ export class FollowupsService {
     });
     await this.queue.enqueue('followup.process', companyId, {}, new Date(input.scheduled_at));
 
-    return followup;
+    return toDatabaseShape(followup);
   }
 
   async processDue(companyId: string, limit: number) {
-    const due = await this.db.query(
-      `select *
-       from followups
-       where company_id = $1 and status = 'scheduled' and scheduled_at <= now()
-       order by scheduled_at asc
-       limit $2`,
-      [companyId, limit],
-    );
+    const due = await this.prisma.followup.findMany({ where: { companyId, status: 'scheduled', scheduledAt: { lte: new Date() } }, orderBy: { scheduledAt: 'asc' }, take: Math.min(Math.max(limit, 1), 100) });
 
     const results = [];
-    for (const followup of due.rows) {
+    for (const followup of due) {
       try {
-        await this.ensureCanSend(companyId, followup.recipient, followup.template_name);
+        await this.ensureCanSend(companyId, followup.recipient, followup.templateName);
         await this.whatsapp.sendWhatsAppText(followup.recipient, followup.message, companyId);
-        await this.db.query(
-          `update followups set status = 'sent', sent_at = now(), updated_at = now() where id = $1`,
-          [followup.id],
-        );
-        await this.db.query(
-          `update opportunity_followup_drafts set status = 'sent', updated_at = now() where followup_id = $1 and status = 'approved'`,
-          [followup.id],
-        );
-        if (followup.opportunity_followup_draft_id) await this.audit.record({ companyId, action: 'opportunity.followup_draft_sent', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunity_followup_draft_id });
+        await this.prisma.followup.update({ where: { id: followup.id }, data: { status: 'sent', sentAt: new Date(), updatedAt: new Date() } });
+        await this.prisma.opportunityFollowupDraft.updateMany({ where: { followupId: followup.id, status: 'approved' }, data: { status: 'sent', updatedAt: new Date() } });
+        if (followup.opportunityFollowupDraftId) await this.audit.record({ companyId, action: 'opportunity.followup_draft_sent', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunityFollowupDraftId });
         await this.events.record({
           companyId,
           eventType: 'followup.sent',
@@ -125,15 +88,9 @@ export class FollowupsService {
         results.push({ id: followup.id, status: 'sent' });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        await this.db.query(
-          `update followups set status = 'blocked', reason = $2, updated_at = now() where id = $1`,
-          [followup.id, message],
-        );
-        await this.db.query(
-          `update opportunity_followup_drafts set status = 'blocked', rejection_reason = $2, updated_at = now() where followup_id = $1 and status = 'approved'`,
-          [followup.id, message],
-        );
-        if (followup.opportunity_followup_draft_id) await this.audit.record({ companyId, action: 'opportunity.followup_draft_blocked', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunity_followup_draft_id, metadata: { reason: message } });
+        await this.prisma.followup.update({ where: { id: followup.id }, data: { status: 'blocked', reason: message, updatedAt: new Date() } });
+        await this.prisma.opportunityFollowupDraft.updateMany({ where: { followupId: followup.id, status: 'approved' }, data: { status: 'blocked', rejectionReason: message, updatedAt: new Date() } });
+        if (followup.opportunityFollowupDraftId) await this.audit.record({ companyId, action: 'opportunity.followup_draft_blocked', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunityFollowupDraftId, metadata: { reason: message } });
         await this.events.record({
           companyId,
           eventType: 'followup.blocked',
@@ -149,29 +106,16 @@ export class FollowupsService {
   }
 
   private async ensureCanSchedule(companyId: string, recipient: string) {
-    const optOut = await this.db.query(
-      `select id from opt_outs where company_id = $1 and channel = 'whatsapp' and recipient = $2`,
-      [companyId, recipient],
-    );
-    if (optOut.rowCount) throw new BadRequestException('Recipient opted out');
+    const optOut = await this.prisma.optOut.findFirst({ where: { companyId, channel: 'whatsapp', recipient } });
+    if (optOut) throw new BadRequestException('Recipient opted out');
   }
 
   private async ensureCanSend(companyId: string, recipient: string, templateName?: string | null) {
     await this.ensureCanSchedule(companyId, recipient);
 
-    const window = await this.db.query<{ last_inbound_at: string }>(
-      `select max(created_at)::text as last_inbound_at
-       from messages m
-       join conversations c on c.id = m.conversation_id
-       where m.company_id = $1
-         and c.external_id = $2
-         and m.direction = 'inbound'`,
-      [companyId, recipient],
-    );
-
-    const lastInbound = window.rows[0]?.last_inbound_at
-      ? new Date(window.rows[0].last_inbound_at)
-      : null;
+    const conversations = await this.prisma.conversation.findMany({ where: { companyId, externalId: recipient }, select: { id: true } });
+    const window = conversations.length ? await this.prisma.message.aggregate({ where: { companyId, direction: 'inbound', conversationId: { in: conversations.map((item) => item.id) } }, _max: { createdAt: true } }) : null;
+    const lastInbound = window?._max.createdAt || null;
     const inside24h = lastInbound
       ? Date.now() - lastInbound.getTime() <= 24 * 60 * 60 * 1000
       : false;

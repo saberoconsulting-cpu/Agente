@@ -18,13 +18,13 @@ export class GoogleIntegrationController {
 
   @Get('auth-url')
   @Roles('owner')
-  async authUrl(@CurrentUser user: AuthTokenPayload) {
+  async authUrl(@CurrentUser() user: AuthTokenPayload) {
     return { url: await this.calendar.getAuthUrl(user) };
   }
 
   @Roles('owner')
   @Get('start')
-  async start(@Res() response: Response, @CurrentUser user: AuthTokenPayload) {
+  async start(@Res() response: Response, @CurrentUser() user: AuthTokenPayload) {
     response.redirect(await this.calendar.getAuthUrl(user));
   }
 

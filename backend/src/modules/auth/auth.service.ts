@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { hashPassword, verifyPassword } from './password';
 import { signToken, verifyToken } from './token';
 
@@ -17,7 +17,7 @@ type AdminUser = {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
@@ -58,29 +58,19 @@ export class AuthService {
   }
 
   async meForPayload(payload: ReturnType<AuthService['verifyAccessToken']>) {
-    const result = await this.db.query<AdminUser>(
-      `select id, company_id, email, password_hash, role, active
-       from admin_users
-       where id = $1 and active = true`,
-      [payload.sub],
-    );
-    if (!result.rowCount) throw new UnauthorizedException('Invalid session');
-    return this.safeUser(result.rows[0]);
+    const user = await this.prisma.adminUser.findFirst({ where: { id: payload.sub, active: true } });
+    if (!user) throw new UnauthorizedException('Invalid session');
+    return this.safeUser(this.toAdminUser(user));
   }
 
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
-    const result = await this.db.query<AdminUser & { session_id: string; expires_at: string; csrf_token_hash: string }>(
-      `select u.id, u.company_id, u.email, u.password_hash, u.role, u.active,
-              s.id as session_id, s.expires_at, s.csrf_token_hash
-       from auth_sessions s join admin_users u on u.id = s.user_id
-       where s.refresh_token_hash = $1 and s.revoked_at is null and s.expires_at > now() and u.active = true`,
-      [this.hashToken(refreshToken)],
-    );
-    if (!result.rowCount) throw new UnauthorizedException('Invalid refresh token');
-    const user = result.rows[0];
+    const sessionRow = await this.prisma.authSession.findFirst({ where: { refreshTokenHash: this.hashToken(refreshToken), revokedAt: null, expiresAt: { gt: new Date() } } });
+    const prismaUser = sessionRow ? await this.prisma.adminUser.findFirst({ where: { id: sessionRow.userId, active: true } }) : null;
+    if (!sessionRow || !prismaUser) throw new UnauthorizedException('Invalid refresh token');
+    const user = this.toAdminUser(prismaUser);
     const ttl = this.accessTokenTtl();
-    const session = await this.rotateSession(user.session_id, user.id, ttl);
+    const session = await this.rotateSession(sessionRow.id, user.id, ttl);
     const token = signToken({
       sub: user.id, email: user.email, company_id: user.company_id, role: user.role,
       sid: session.id, csrf: session.csrfToken, exp: Math.floor(Date.now() / 1000) + ttl,
@@ -90,11 +80,11 @@ export class AuthService {
 
   async logout(token?: string) {
     const payload = token ? this.verifyAccessToken(token) : null;
-    if (payload?.sid) await this.db.query('update auth_sessions set revoked_at = now() where id = $1', [payload.sid]);
+    if (payload?.sid) await this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } });
   }
 
   async logoutFromPayload(payload: ReturnType<AuthService['verifyAccessToken']>) {
-    if (payload.sid) await this.db.query('update auth_sessions set revoked_at = now() where id = $1', [payload.sid]);
+    if (payload.sid) await this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } });
   }
 
   async createUser(input: {
@@ -119,51 +109,21 @@ export class AuthService {
       throw new BadRequestException('password must be at least 10 characters');
     }
 
-    const result = await this.db.query<AdminUser>(
-      `insert into admin_users (company_id, email, password_hash, role, active)
-       values ($1, $2, $3, $4, true)
-       on conflict (email)
-       do update set company_id = excluded.company_id,
-                     password_hash = excluded.password_hash,
-                     role = excluded.role,
-                     active = true,
-                     updated_at = now()
-       returning id, company_id, email, password_hash, role, active`,
-      [
-        input.companyId,
-        input.email,
-        hashPassword(input.password),
-        input.role || 'admin',
-      ],
-    );
-
-    return this.safeUser(result.rows[0]);
+    const user = await this.prisma.adminUser.upsert({ where: { email: input.email }, create: { companyId: input.companyId, email: input.email, passwordHash: hashPassword(input.password), role: input.role || 'admin', active: true }, update: { companyId: input.companyId, passwordHash: hashPassword(input.password), role: input.role || 'admin', active: true, updatedAt: new Date() } });
+    return this.safeUser(this.toAdminUser(user));
   }
 
   async listUsers(requester: ReturnType<AuthService['verifyAccessToken']>) {
     const companyId = requester.company_id;
 
-    const result = await this.db.query<AdminUser>(
-      `select id, company_id, email, password_hash, role, active
-       from admin_users
-       where company_id = $1
-       order by created_at asc`,
-      [companyId],
-    );
-    return result.rows.map((user) => this.safeUser(user));
+    const users = await this.prisma.adminUser.findMany({ where: { companyId }, orderBy: { createdAt: 'asc' } });
+    return users.map((user) => this.safeUser(this.toAdminUser(user)));
   }
 
   async ensureBootstrapOwner(companyId: string, email: string, password: string) {
     if (password.length < 10) throw new BadRequestException('ADMIN_PASSWORD must be at least 10 characters');
-    const result = await this.db.query<AdminUser>(
-      `insert into admin_users (company_id, email, password_hash, role, active)
-       values ($1, $2, $3, 'owner', true)
-       on conflict (email) do update set password_hash = excluded.password_hash,
-         company_id = excluded.company_id, active = true, updated_at = now()
-       returning id, company_id, email, password_hash, role, active`,
-      [companyId, email, hashPassword(password)],
-    );
-    return this.safeUser(result.rows[0]);
+    const user = await this.prisma.adminUser.upsert({ where: { email }, create: { companyId, email, passwordHash: hashPassword(password), role: 'owner', active: true }, update: { companyId, passwordHash: hashPassword(password), active: true, updatedAt: new Date() } });
+    return this.safeUser(this.toAdminUser(user));
   }
 
   verifyAccessToken(token: string) {
@@ -178,13 +138,8 @@ export class AuthService {
   }
 
   private async findUserByEmail(email: string) {
-    const result = await this.db.query<AdminUser>(
-      `select id, company_id, email, password_hash, role, active
-       from admin_users
-       where lower(email) = lower($1)`,
-      [email],
-    );
-    return result.rows[0] || null;
+    const user = await this.prisma.adminUser.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+    return user ? this.toAdminUser(user) : null;
   }
 
   private safeUser(user: AdminUser) {
@@ -206,21 +161,21 @@ export class AuthService {
   private async createSession(userId: string, accessTtlSeconds: number) {
     const refreshToken = randomBytes(48).toString('base64url');
     const csrfToken = randomBytes(32).toString('base64url');
-    const result = await this.db.query<{ id: string }>(
-      `insert into auth_sessions (user_id, refresh_token_hash, csrf_token_hash, expires_at)
-       values ($1, $2, $3, now() + interval '30 days') returning id`,
-      [userId, this.hashToken(refreshToken), this.hashToken(csrfToken)],
-    );
-    return { id: result.rows[0].id, refreshToken, csrfToken, accessTtlSeconds };
+    const session = await this.prisma.authSession.create({ data: { userId, refreshTokenHash: this.hashToken(refreshToken), csrfTokenHash: this.hashToken(csrfToken), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+    return { id: session.id, refreshToken, csrfToken, accessTtlSeconds };
   }
 
   private async rotateSession(oldId: string, userId: string, accessTtlSeconds: number) {
-    await this.db.query('update auth_sessions set revoked_at = now() where id = $1', [oldId]);
+    await this.prisma.authSession.updateMany({ where: { id: oldId }, data: { revokedAt: new Date() } });
     return this.createSession(userId, accessTtlSeconds);
   }
 
   private hashToken(value: string) {
     return createHash('sha256').update(value).digest('hex');
+  }
+
+  private toAdminUser(user: { id: string; companyId: string; email: string; passwordHash: string; role: string; active: boolean }): AdminUser {
+    return { id: user.id, company_id: user.companyId, email: user.email, password_hash: user.passwordHash, role: user.role, active: user.active };
   }
 
   private accessTokenTtl() {

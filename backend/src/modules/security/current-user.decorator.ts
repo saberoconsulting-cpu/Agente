@@ -7,7 +7,7 @@ export const CurrentUser = createParamDecorator(
     if (!request.user) throw new Error('Authenticated user is required');
     return request.user;
   },
-);
+) as unknown as () => ParameterDecorator;
 
 export const TenantId = createParamDecorator(
   (_data: unknown, context: ExecutionContext): string => {
@@ -15,4 +15,4 @@ export const TenantId = createParamDecorator(
     if (!request.user?.company_id) throw new Error('Authenticated tenant is required');
     return request.user.company_id;
   },
-);
+) as unknown as () => ParameterDecorator;

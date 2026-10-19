@@ -1,55 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { toDatabaseShape } from '../../infrastructure/prisma/serialize';
 
 @Injectable()
 export class ConversationsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async list(companyId: string, limit = 50) {
-    const result = await this.db.query(
-      `select
-         c.id,
-         c.company_id,
-         c.lead_id,
-         c.channel,
-         c.external_id,
-         c.state,
-         c.created_at,
-         c.updated_at,
-         l.name as lead_name,
-         l.whatsapp_number,
-         count(m.id)::int as messages_count,
-         max(m.created_at) as last_message_at
-       from conversations c
-       left join leads l on l.id = c.lead_id
-       left join messages m on m.conversation_id = c.id
-       where c.company_id = $1
-       group by c.id, l.name, l.whatsapp_number
-       order by coalesce(max(m.created_at), c.updated_at) desc
-       limit $2`,
-      [companyId, Math.min(Math.max(limit, 1), 200)],
-    );
-    return result.rows;
+    const conversations = await this.prisma.conversation.findMany({ where: { companyId }, orderBy: { updatedAt: 'desc' }, take: Math.min(Math.max(limit, 1), 200) });
+    const rows = await Promise.all(conversations.map(async (conversation) => {
+      const [lead, aggregate] = await Promise.all([
+        conversation.leadId ? this.prisma.lead.findUnique({ where: { id: conversation.leadId }, select: { name: true, whatsappNumber: true } }) : null,
+        this.prisma.message.aggregate({ where: { conversationId: conversation.id }, _count: { id: true }, _max: { createdAt: true } }),
+      ]);
+      return { ...conversation, leadName: lead?.name || null, whatsappNumber: lead?.whatsappNumber || null, messagesCount: aggregate._count.id, lastMessageAt: aggregate._max.createdAt };
+    }));
+    return toDatabaseShape(rows);
   }
 
   async messages(companyId: string, conversationId: string, limit = 100) {
-    const result = await this.db.query(
-      `select
-         m.id,
-         m.company_id,
-         m.conversation_id,
-         m.provider_message_id,
-         m.direction,
-         m.message_type,
-         m.text_body,
-         m.created_at
-       from messages m
-       join conversations c on c.id = m.conversation_id
-       where m.company_id = $1 and c.id = $2
-       order by m.created_at asc
-       limit $3`,
-      [companyId, conversationId, Math.min(Math.max(limit, 1), 300)],
-    );
-    return result.rows;
+    return toDatabaseShape(await this.prisma.message.findMany({ where: { companyId, conversationId }, select: { id: true, companyId: true, conversationId: true, providerMessageId: true, direction: true, messageType: true, textBody: true, createdAt: true }, orderBy: { createdAt: 'asc' }, take: Math.min(Math.max(limit, 1), 300) }));
   }
 }

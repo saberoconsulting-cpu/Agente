@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../database/database.service';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { toDatabaseShape } from '../../infrastructure/prisma/serialize';
 
 export type AuditInput = {
   companyId: string;
@@ -13,35 +15,13 @@ export type AuditInput = {
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async record(input: AuditInput) {
-    await this.db.query(
-      `insert into audit_logs (
-         company_id, actor_type, actor_id, action, resource_type, resource_id, metadata
-       )
-       values ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        input.companyId,
-        input.actorType || 'system',
-        input.actorId || null,
-        input.action,
-        input.resourceType || null,
-        input.resourceId || null,
-        JSON.stringify(input.metadata || {}),
-      ],
-    );
+    await this.prisma.auditLog.create({ data: { companyId: input.companyId, actorType: input.actorType || 'system', actorId: input.actorId || null, action: input.action, resourceType: input.resourceType || null, resourceId: input.resourceId || null, metadata: (input.metadata || {}) as Prisma.InputJsonValue } });
   }
 
   async list(companyId: string, limit = 50) {
-    const result = await this.db.query(
-      `select id, company_id, actor_type, actor_id, action, resource_type, resource_id, metadata, created_at
-       from audit_logs
-       where company_id = $1
-       order by created_at desc
-       limit $2`,
-      [companyId, Math.min(Math.max(limit, 1), 200)],
-    );
-    return result.rows;
+    return toDatabaseShape(await this.prisma.auditLog.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, take: Math.min(Math.max(limit, 1), 200) }));
   }
 }

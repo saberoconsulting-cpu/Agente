@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import axios from 'axios';
+import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { toDatabaseShape } from '../../infrastructure/prisma/serialize';
 
 export type AgentEventInput = {
   companyId: string;
@@ -15,27 +17,13 @@ export type AgentEventInput = {
 @Injectable()
 export class EventsService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
   async record(input: AgentEventInput) {
-    const result = await this.db.query<{ id: string }>(
-      `insert into agent_events (
-         company_id, event_type, aggregate_type, aggregate_id, payload
-       )
-       values ($1, $2, $3, $4, $5)
-       returning id`,
-      [
-        input.companyId,
-        input.eventType,
-        input.aggregateType || null,
-        input.aggregateId || null,
-        JSON.stringify(input.payload || {}),
-      ],
-    );
-
-    const eventId = result.rows[0].id;
+    const event = await this.prisma.agentEvent.create({ data: { companyId: input.companyId, eventType: input.eventType, aggregateType: input.aggregateType || null, aggregateId: input.aggregateId || null, payload: (input.payload || {}) as Prisma.InputJsonValue } });
+    const eventId = event.id;
     void this.deliverWebhook(eventId, input).catch((error) => {
       console.warn('Outbound webhook delivery failed', {
         event_id: eventId,
@@ -48,15 +36,7 @@ export class EventsService {
   }
 
   async list(companyId: string, limit = 50) {
-    const result = await this.db.query(
-      `select id, company_id, event_type, aggregate_type, aggregate_id, payload, created_at
-       from agent_events
-       where company_id = $1
-       order by created_at desc
-       limit $2`,
-      [companyId, Math.min(Math.max(limit, 1), 200)],
-    );
-    return result.rows;
+    return toDatabaseShape(await this.prisma.agentEvent.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' }, take: Math.min(Math.max(limit, 1), 200) }));
   }
 
   private async deliverWebhook(eventId: string, input: AgentEventInput) {
@@ -78,14 +58,7 @@ export class EventsService {
       ? createHmac('sha256', secret).update(rawPayload).digest('hex')
       : null;
 
-    const delivery = await this.db.query<{ id: string }>(
-      `insert into outbound_webhook_deliveries (
-         company_id, event_id, target_url, status, request_payload
-       )
-       values ($1, $2, $3, 'pending', $4)
-       returning id`,
-      [input.companyId, eventId, url, rawPayload],
-    );
+    const delivery = await this.prisma.outboundWebhookDelivery.create({ data: { companyId: input.companyId, eventId, targetUrl: url, status: 'pending', requestPayload: payload as Prisma.InputJsonValue } });
 
     try {
       const response = await axios.post(url, payload, {
@@ -96,23 +69,9 @@ export class EventsService {
         timeout: 10000,
       });
 
-      await this.db.query(
-        `update outbound_webhook_deliveries
-         set status = 'delivered',
-             status_code = $2,
-             response_body = $3,
-             delivered_at = now()
-         where id = $1`,
-        [delivery.rows[0].id, response.status, JSON.stringify(response.data || {})],
-      );
+      await this.prisma.outboundWebhookDelivery.update({ where: { id: delivery.id }, data: { status: 'delivered', statusCode: response.status, responseBody: response.data || {}, deliveredAt: new Date() } });
     } catch (error) {
-      await this.db.query(
-        `update outbound_webhook_deliveries
-         set status = 'failed',
-             error_message = $2
-         where id = $1`,
-        [delivery.rows[0].id, error instanceof Error ? error.message : String(error)],
-      );
+      await this.prisma.outboundWebhookDelivery.update({ where: { id: delivery.id }, data: { status: 'failed', errorMessage: error instanceof Error ? error.message : String(error) } });
       throw error;
     }
   }
