@@ -9,7 +9,7 @@ import { AuthTokenPayload } from './token';
 @Controller('auth')
 export class AuthController {
   private readonly loginAttempts = new Map<string, { count: number; resetAt: number }>();
-  constructor(private readonly auth: AuthService) {}
+  constructor(private readonly auth: AuthService) { }
 
   @PublicRoute()
   @Post('login')

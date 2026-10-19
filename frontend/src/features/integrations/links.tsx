@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, MessageCircle, Plus, RefreshCw, Settings2, Trash2, Users, Zap } from 'lucide-react';
-import { apiRequest, SessionUser } from '../../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
-import { Button, Panel, StatusPill } from '../../components/ui';
-import type { FacebookLoginResponse, WhatsAppConnection, WhatsAppEmbeddedSignupConfig, WhatsAppSignupAssets } from '../../lib/integrations';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { CalendarClock, Cloud, ExternalLink, MessageCircle, RefreshCw, Zap } from 'lucide-react';
+import { apiRequest } from '@/lib/api';
+import { Button, Panel, StatusPill } from '@/components/ui';
+import type { WhatsAppConnection, WhatsAppEmbeddedSignupConfig, WhatsAppSignupAssets } from '@/lib/integrations';
 
 export function Links({ companyId, pushLog, reload }: { companyId: string; pushLog: (m: string) => void; reload: () => void }) {
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsAppEmbeddedSignupConfig | null>(null);
@@ -19,6 +18,36 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
   useEffect(() => {
     void loadWhatsAppState();
   }, []);
+
+  const completeWhatsAppSignup = useCallback(async () => {
+    const code = pendingCodeRef.current;
+    const assets = pendingAssetsRef.current;
+    if (completingRef.current || !code || !assets.waba_id || !assets.phone_number_id) return;
+
+    completingRef.current = true;
+    try {
+      const connection = await apiRequest<WhatsAppConnection>('/whatsapp/connections/embedded-signup/complete', {
+        method: 'POST',
+        body: JSON.stringify({
+          code,
+          waba_id: assets.waba_id,
+          phone_number_id: assets.phone_number_id,
+        }),
+      });
+      setWhatsappConnections([connection]);
+      setWhatsappStatus('WhatsApp conectado correctamente.');
+      pushLog('WhatsApp conectado y token guardado cifrado.');
+      reload();
+    } catch (error) {
+      setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo completar WhatsApp.');
+      pushLog('WhatsApp no pudo completar la conexion.');
+    } finally {
+      setWhatsappBusy(false);
+      completingRef.current = false;
+      pendingCodeRef.current = null;
+      pendingAssetsRef.current = {};
+    }
+  }, [pushLog, reload]);
 
   useEffect(() => {
     const listener = (event: MessageEvent) => {
@@ -44,7 +73,7 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
 
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);
-  }, []);
+  }, [completeWhatsAppSignup, pushLog]);
 
   const items = [
     ['WhatsApp Cloud API', 'Webhook, respuestas y seguimiento comercial.', Boolean(whatsappConnections.length), MessageCircle],
@@ -107,36 +136,6 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
     } catch (error) {
       setWhatsappBusy(false);
       setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo iniciar Meta.');
-    }
-  }
-
-  async function completeWhatsAppSignup() {
-    const code = pendingCodeRef.current;
-    const assets = pendingAssetsRef.current;
-    if (completingRef.current || !code || !assets.waba_id || !assets.phone_number_id) return;
-
-    completingRef.current = true;
-    try {
-      const connection = await apiRequest<WhatsAppConnection>('/whatsapp/connections/embedded-signup/complete', {
-        method: 'POST',
-        body: JSON.stringify({
-          code,
-          waba_id: assets.waba_id,
-          phone_number_id: assets.phone_number_id,
-        }),
-      });
-      setWhatsappConnections([connection]);
-      setWhatsappStatus('WhatsApp conectado correctamente.');
-      pushLog('WhatsApp conectado y token guardado cifrado.');
-      reload();
-    } catch (error) {
-      setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo completar WhatsApp.');
-      pushLog('WhatsApp no pudo completar la conexion.');
-    } finally {
-      setWhatsappBusy(false);
-      completingRef.current = false;
-      pendingCodeRef.current = null;
-      pendingAssetsRef.current = {};
     }
   }
 

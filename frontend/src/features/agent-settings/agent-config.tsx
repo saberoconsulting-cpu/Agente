@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, MessageCircle, Plus, RefreshCw, Settings2, Trash2, Users, Zap } from 'lucide-react';
-import { apiRequest, SessionUser } from '../../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
-import { Button, Panel, StatusPill } from '../../components/ui';
+import { useEffect, useState } from 'react';
+import { Bot, Plus, Trash2 } from 'lucide-react';
+import { apiRequest } from '@/lib/api';
+import type { AgentSettings } from '@/lib/types';
+import { Button, Panel, StatusPill } from '@/components/ui';
 
 export function AgentConfig({ companyId, settings, reload, pushLog }: { companyId: string; settings: AgentSettings | null; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [brief, setBrief] = useState('Somos SABERO Consulting. Vendemos software a medida, arquitectura cloud y automatizaciones con IA para empresas que quieren vender mas, operar mejor y escalar.');
@@ -178,26 +178,6 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
       </Panel>
     </div>
   );
-}
-
-function servicesFromBrief(brief: string, fallback: string[][]) {
-  const serviceNames = brief
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => /^[-*•]\s+/.test(line))
-    .map((line) => line.replace(/^[-*•]\s+/, '').replace(/[.;:]$/, '').trim())
-    .filter(Boolean);
-
-  if (!serviceNames.length) return fallback;
-
-  return Array.from(new Set(serviceNames)).map((name) => [
-    name,
-    [
-      `Servicio de ${name}.`,
-      'Debe venderse de forma consultiva: identificar la necesidad del prospecto, explicar entregables posibles y conectar el servicio con valor economico.',
-      'Si el prospecto pide experiencia, certificaciones, precios o resultados especificos, confirmar solo lo que exista en la base de conocimiento o derivar a una reunion con SABERO.',
-    ].join(' '),
-  ]);
 }
 
 function robustServicesFromBrief(brief: string, fallback: string[][]) {

@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, MessageCircle, Plus, RefreshCw, Settings2, Trash2, Users, Zap } from 'lucide-react';
-import { apiRequest, SessionUser } from '../../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
-import { Button, Panel, StatusPill } from '../../components/ui';
+import { useState } from 'react';
+import { CheckCircle2 } from 'lucide-react';
+import { apiRequest, SessionUser } from '@/lib/api';
+import { Button, Panel } from '@/components/ui';
 
 export function Access({ companyId, users, reload, pushLog }: { companyId: string; users: SessionUser[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [email, setEmail] = useState('');

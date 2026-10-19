@@ -11,33 +11,42 @@ export type LoginResponse = {
   user: SessionUser;
 };
 
+const CSRF_COOKIE = 'sabero_csrf';
+
 export function apiBase() {
   if (typeof window === 'undefined') return process.env.NEXT_PUBLIC_API_BASE || '';
   return process.env.NEXT_PUBLIC_API_BASE || `${window.location.origin}/api/v1`;
 }
 
-export function getToken() {
-  return null;
+function readCookie(name: string) {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.split('; ').find((item) => item.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.split('=').slice(1).join('=')) : null;
 }
 
-export function setToken(token: string) {
-  void token;
+export function getToken() {
+  return readCookie(CSRF_COOKIE);
+}
+
+export function setToken(_token: string) {
+  // Auth se maneja con cookies HttpOnly; el CSRF token se lee de sabero_csrf.
 }
 
 export function clearToken() {
-  // Authentication is held in HttpOnly cookies and can only be cleared by /auth/logout.
+  // Llamar a /auth/logout para limpiar las cookies en el backend.
 }
 
 export async function apiRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const csrf = typeof document === 'undefined' ? null : document.cookie.split('; ').find((item) => item.startsWith('sabero_csrf='))?.split('=')[1];
+  const method = (options.method || 'GET').toUpperCase();
+  const csrf = getToken();
   const response = await fetch(`${apiBase()}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(['POST', 'PUT', 'PATCH', 'DELETE'].includes((options.method || 'GET').toUpperCase()) && csrf ? { 'X-CSRF-Token': csrf } : {}),
+      ...(method !== 'GET' && csrf ? { 'X-CSRF-Token': csrf } : {}),
       ...(options.headers || {}),
     },
-    credentials: 'same-origin',
+    credentials: 'include',
   });
   const text = await response.text();
   const payload = text ? JSON.parse(text) : null;
@@ -50,6 +59,7 @@ export async function login(email: string, password: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
+    credentials: 'include',
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.message || 'No se pudo iniciar sesion');

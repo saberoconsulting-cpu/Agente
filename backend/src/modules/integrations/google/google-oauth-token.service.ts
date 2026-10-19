@@ -1,7 +1,8 @@
+
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { google } from 'googleapis';
-import { Credentials } from 'google-auth-library';
+import { Credentials, OAuth2Client } from 'google-auth-library';
 import { OAuthTokenCryptoService } from '../../security/oauth-token-crypto.service';
 import { GoogleOAuthRepository } from './repositories/google-oauth.repository';
 
@@ -19,11 +20,11 @@ export class GoogleOAuthTokenService {
     private readonly crypto: OAuthTokenCryptoService,
   ) {}
 
-  getScopes() {
+  getScopes(): string[] {
     return googleScopes;
   }
 
-  createOAuthClient() {
+  createOAuthClient(): OAuth2Client {
     const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
     const clientSecret = this.config.get<string>('GOOGLE_CLIENT_SECRET');
     const redirectUri = this.config.get<string>('GOOGLE_REDIRECT_URI');
@@ -47,7 +48,13 @@ export class GoogleOAuthTokenService {
     }
 
     const oauth2Client = this.createOAuthClient();
-    oauth2Client.setCredentials(this.crypto.decryptJson<Credentials>(result.rows[0].encrypted_tokens));
+
+    oauth2Client.setCredentials(
+      this.crypto.decryptJson<Credentials>(
+        result.rows[0].encrypted_tokens,
+      ),
+    );
+
     return oauth2Client;
   }
 

@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, MessageCircle, Plus, RefreshCw, Settings2, Trash2, Users, Zap } from 'lucide-react';
-import { apiRequest, SessionUser } from '../../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
-import { Button, Panel, StatusPill } from '../../components/ui';
+import { CalendarClock, FileText, MessageCircle, Users } from 'lucide-react';
+import { formatMoney } from '@/lib/format';
+import type { DashboardSummary, OpportunityFollowupDraft } from '@/lib/types';
+import { Breakdown } from '@/components/breakdown';
+import { DraftInbox } from '@/components/draft-inbox';
+import { Panel, StatusPill } from '@/components/ui';
 
 export function Overview({ summary, log, drafts, canOperate, reload }: { summary: DashboardSummary | null; log: string[]; drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void> }) {
   const metrics = [

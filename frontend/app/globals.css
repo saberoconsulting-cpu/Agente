@@ -30,9 +30,7 @@ select {
   font: inherit;
 }
 
-.saber-grid {
-  background-image:
-    linear-gradient(rgba(16, 135, 255, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 135, 255, 0.08) 1px, transparent 1px);
-  background-size: 42px 42px;
+.login-visual {
+  isolation: isolate;
+  background: #f4f8f7;
 }

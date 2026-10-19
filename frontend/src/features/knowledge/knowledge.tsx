@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Brain, CalendarClock, CheckCircle2, Cloud, ExternalLink, FileText, MessageCircle, Plus, RefreshCw, Settings2, Trash2, Users, Zap } from 'lucide-react';
-import { apiRequest, SessionUser } from '../../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../../lib/types';
-import { Button, Panel, StatusPill } from '../../components/ui';
-import type { PickerConfig, PickerDocument, TokenClient } from '../../lib/integrations';
+import { useCallback, useEffect, useState } from 'react';
+import { Cloud, FileText, RefreshCw } from 'lucide-react';
+import { apiRequest } from '@/lib/api';
+import type { DriveFile } from '@/lib/types';
+import { Button, Panel, StatusPill } from '@/components/ui';
+import type { PickerConfig, PickerDocument, TokenClient } from '@/lib/integrations';
 
 export function Knowledge({ companyId, files, reload, pushLog }: { companyId: string; files: DriveFile[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);
@@ -15,32 +15,55 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
   const [tokenClient, setTokenClient] = useState<TokenClient | null>(null);
   const [syncing, setSyncing] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadPicker() {
-      const config = await apiRequest<PickerConfig>(`/integrations/google/picker-config?company_id=${companyId}`);
-      if (cancelled) return;
-      setPickerConfig(config);
-
-      if (!config.enabled || !config.client_id) {
-        pushLog('Google Picker pendiente: revisa GOOGLE_PICKER_API_KEY y GOOGLE_APP_ID.');
-        return;
-      }
-
-      waitForGoogleLibraries(config, cancelled);
+  const handlePickerSelection = useCallback(async (data: { action: string; docs?: PickerDocument[] }) => {
+    if (data.action !== window.google.picker.Action.PICKED) {
+      setPickerBusy(false);
+      return;
     }
 
-    void loadPicker();
+    for (const doc of data.docs || []) {
+      await apiRequest('/google-drive/files', {
+        method: 'POST',
+        body: JSON.stringify({
+          company_id: companyId,
+          google_file_id: doc.id,
+          name: doc.name,
+          mime_type: doc.mimeType,
+          web_view_link: doc.url,
+        }),
+      });
+      pushLog(`Documento autorizado: ${doc.name}.`);
+    }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [companyId]);
+    setPickerBusy(false);
+    await reload(companyId);
+  }, [companyId, pushLog, reload]);
 
-  function waitForGoogleLibraries(config: PickerConfig, cancelled: boolean) {
+  const openPicker = useCallback((config: PickerConfig, token: string) => {
+    const view = new window.google.picker.DocsView()
+      .setIncludeFolders(false)
+      .setMimeTypes([
+        'application/pdf',
+        'application/vnd.google-apps.document',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ].join(','));
+
+    new window.google.picker.PickerBuilder()
+      .setDeveloperKey(config.developer_key)
+      .setAppId(config.app_id)
+      .setOAuthToken(token)
+      .setCallback((data: { action: string; docs?: PickerDocument[] }) => {
+        void handlePickerSelection(data);
+      })
+      .addView(view)
+      .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
+      .build()
+      .setVisible(true);
+  }, [handlePickerSelection]);
+
+  const waitForGoogleLibraries = useCallback((config: PickerConfig, cancelledRef: { current: boolean }) => {
     const timer = window.setInterval(() => {
-      if (cancelled) {
+      if (cancelledRef.current) {
         window.clearInterval(timer);
         return;
       }
@@ -69,7 +92,30 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
         pushLog('Google Picker listo para seleccionar documentos.');
       });
     }, 200);
-  }
+  }, [pushLog, openPicker]);
+
+  useEffect(() => {
+    const cancelledRef = { current: false };
+
+    async function loadPicker() {
+      const config = await apiRequest<PickerConfig>(`/integrations/google/picker-config?company_id=${companyId}`);
+      if (cancelledRef.current) return;
+      setPickerConfig(config);
+
+      if (!config.enabled || !config.client_id) {
+        pushLog('Google Picker pendiente: revisa GOOGLE_PICKER_API_KEY y GOOGLE_APP_ID.');
+        return;
+      }
+
+      waitForGoogleLibraries(config, cancelledRef);
+    }
+
+    void loadPicker();
+
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, [companyId, pushLog, waitForGoogleLibraries]);
 
   function selectFiles() {
     if (!pickerConfig?.enabled || !tokenClient || !pickerReady) {
@@ -79,52 +125,6 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
 
     setPickerBusy(true);
     tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
-  }
-
-  function openPicker(config: PickerConfig, token: string) {
-    const view = new window.google.picker.DocsView()
-      .setIncludeFolders(false)
-      .setMimeTypes([
-        'application/pdf',
-        'application/vnd.google-apps.document',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      ].join(','));
-
-    new window.google.picker.PickerBuilder()
-      .setDeveloperKey(config.developer_key)
-      .setAppId(config.app_id)
-      .setOAuthToken(token)
-      .setCallback((data: { action: string; docs?: PickerDocument[] }) => {
-        void handlePickerSelection(data);
-      })
-      .addView(view)
-      .enableFeature(window.google.picker.Feature.MULTISELECT_ENABLED)
-      .build()
-      .setVisible(true);
-  }
-
-  async function handlePickerSelection(data: { action: string; docs?: PickerDocument[] }) {
-    if (data.action !== window.google.picker.Action.PICKED) {
-      setPickerBusy(false);
-      return;
-    }
-
-    for (const doc of data.docs || []) {
-      await apiRequest('/google-drive/files', {
-        method: 'POST',
-        body: JSON.stringify({
-          company_id: companyId,
-          google_file_id: doc.id,
-          name: doc.name,
-          mime_type: doc.mimeType,
-          web_view_link: doc.url,
-        }),
-      });
-      pushLog(`Documento autorizado: ${doc.name}.`);
-    }
-
-    setPickerBusy(false);
-    await reload(companyId);
   }
 
   async function syncAll() {
@@ -195,46 +195,6 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
       </div>
     </Panel>
   );
-}
-
-function Meetings({ meetings, reload }: { meetings: Meeting[]; reload: () => Promise<void> }) {
-  return (
-    <Panel>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Google Calendar</p>
-          <h2 className="mt-2 text-3xl font-black text-sabero-navy">Reuniones agendadas por el agente</h2>
-        </div>
-        <Button variant="ghost" onClick={() => void reload()}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button>
-      </div>
-      <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
-        {meetings.length === 0 ? (
-          <div className="p-8 text-center">
-            <CalendarClock className="mx-auto h-10 w-10 text-sabero-electric" />
-            <p className="mt-3 font-black text-sabero-navy">Aun no hay reuniones registradas.</p>
-            <p className="mt-2 text-sm font-semibold text-slate-500">Cuando el agente cierre una cita, aparecera aqui y tambien quedara en Google Calendar.</p>
-          </div>
-        ) : meetings.map((meeting) => (
-          <div key={meeting.id} className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 p-4 last:border-0">
-            <div>
-              <p className="font-black text-sabero-navy">{meeting.title}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
-                {meeting.attendee_name || meeting.attendee_email || 'Prospecto'} · {formatDateTime(meeting.start_time)}
-              </p>
-            </div>
-            <StatusPill active={meeting.status === 'booked'} label={meeting.status} />
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString('es-PE', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }
 
 

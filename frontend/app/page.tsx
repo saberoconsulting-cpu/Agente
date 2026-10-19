@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiRequest, SessionUser } from '../lib/api';
-import { DashboardApp } from '../components/dashboard';
-import { LoginScreen } from '../components/login';
+import Image from 'next/image';
+import { apiRequest, SessionUser } from '@/lib/api';
+import { DashboardApp } from '@/components/dashboard';
+import { LoginScreen } from '@/components/login';
 
 export default function HomePage() {
   const [ready, setReady] = useState(false);
@@ -25,8 +26,15 @@ export default function HomePage() {
 
   if (!ready) {
     return (
-      <main className="grid min-h-screen place-items-center bg-sabero-navy text-white">
-        <div className="h-14 w-14 animate-pulse rounded-2xl bg-sabero-electric shadow-neon" />
+      <main className="grid min-h-screen place-items-center bg-sabero-navy">
+        <Image
+          src="/bot.jpg"
+          alt="Asistente SABERO"
+          width={192}
+          height={192}
+          priority
+          className="h-48 w-48 animate-pulse rounded-full object-cover shadow-neon"
+        />
       </main>
     );
   }
