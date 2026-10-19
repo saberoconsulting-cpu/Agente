@@ -481,3 +481,5 @@ create index if not exists opportunity_followup_drafts_opportunity_rule_idx on o
 alter table followups add column if not exists opportunity_followup_draft_id uuid references opportunity_followup_drafts(id);
 create unique index if not exists followups_opportunity_followup_draft_unique on followups(opportunity_followup_draft_id) where opportunity_followup_draft_id is not null;
 
+
+

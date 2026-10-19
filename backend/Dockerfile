@@ -8,8 +8,9 @@ RUN npm ci
 COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
 COPY scripts ./scripts
-COPY database ./database
+COPY prisma ./prisma
 
+RUN npm run prisma:generate
 RUN npm run build
 
 ENV NODE_ENV=production

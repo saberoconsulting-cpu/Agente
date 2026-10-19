@@ -23,10 +23,12 @@ import { SalesAgentModule } from './sales-agent/sales-agent.module';
 import { WhatsappModule } from './whatsapp/whatsapp.module';
 import { QueueModule } from './queue/queue.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
+import { PrismaModule } from '../infrastructure/prisma/prisma.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    PrismaModule,
     DatabaseModule,
     EventsModule,
     AuditModule,
