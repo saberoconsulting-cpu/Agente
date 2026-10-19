@@ -15,6 +15,7 @@ export class DashboardService {
       events,
       integrations,
       opportunities,
+      sales,
     ] = await Promise.all([
       this.db.query<{ count: string }>('select count(*)::text from leads where company_id = $1', [companyId]),
       this.db.query<{ count: string }>('select count(*)::text from conversations where company_id = $1', [companyId]),
@@ -54,6 +55,30 @@ export class DashboardService {
           count(*) filter (where assignee_id is null and stage not in ('ganado','perdido'))::text as unassigned,
           count(*) filter (where stage = 'propuesta')::text as proposed,
           count(*) filter (where stage = 'ganado')::text as won from opportunities where company_id = $1`, [companyId]),
+      this.db.query(
+        `with month as (select date_trunc('month', now()) as starts_at), activity as (
+          select oa.opportunity_id, oa.activity_type, oa.content from opportunity_activities oa, month
+          where oa.company_id = $1 and oa.created_at >= month.starts_at
+        )
+        select
+          (select count(*)::text from opportunities o, month where o.company_id = $1 and o.created_at >= month.starts_at) as created,
+          (select count(distinct opportunity_id)::text from activity where activity_type = 'opportunity.stage_changed' and content = 'Etapa: calificado') as qualified,
+          (select count(*)::text from meetings m, month where m.company_id = $1 and m.status = 'booked' and m.created_at >= month.starts_at) as meetings,
+          (select count(distinct opportunity_id)::text from activity where activity_type = 'opportunity.proposal_created') as proposals,
+          (select count(distinct opportunity_id)::text from activity where activity_type = 'opportunity.stage_changed' and content = 'Etapa: ganado') as won,
+          (select count(distinct opportunity_id)::text from activity where activity_type = 'opportunity.stage_changed' and content = 'Etapa: perdido') as lost,
+          (select coalesce(sum(estimated_value), 0)::text from opportunities where company_id = $1 and stage not in ('ganado','perdido')) as pipeline_value,
+          (select coalesce(sum(o.estimated_value), 0)::text from opportunities o join activity a on a.opportunity_id = o.id where a.activity_type = 'opportunity.stage_changed' and a.content = 'Etapa: ganado') as won_value,
+          (select count(*)::text from opportunity_followup_drafts where company_id = $1 and status = 'pending') as pending_drafts,
+          coalesce((select json_agg(row_to_json(x)) from (
+            select coalesce(u.email, 'Sin asignar') as label, count(*)::int as count, coalesce(sum(o.estimated_value), 0)::text as value
+            from opportunities o left join admin_users u on u.id = o.assignee_id
+            where o.company_id = $1 and o.stage not in ('ganado','perdido') group by u.email order by count(*) desc limit 8
+          ) x), '[]'::json) as by_assignee,
+          coalesce((select json_agg(row_to_json(x)) from (
+            select coalesce(nullif(service_interest, ''), 'Sin definir') as label, count(*)::int as count, coalesce(sum(estimated_value), 0)::text as value
+            from opportunities where company_id = $1 and stage not in ('ganado','perdido') group by service_interest order by count(*) desc limit 8
+          ) x), '[]'::json) as by_service`, [companyId]),
     ]);
 
     return {
@@ -70,6 +95,20 @@ export class DashboardService {
         drive_files: Number(integrations.rows[0]?.drive_files || 0),
       },
       opportunities: { open: Number(opportunities.rows[0]?.open || 0), hot: Number(opportunities.rows[0]?.hot || 0), unassigned: Number(opportunities.rows[0]?.unassigned || 0), proposed: Number(opportunities.rows[0]?.proposed || 0), won: Number(opportunities.rows[0]?.won || 0) },
+      sales: {
+        created: Number(sales.rows[0]?.created || 0), qualified: Number(sales.rows[0]?.qualified || 0), meetings: Number(sales.rows[0]?.meetings || 0), proposals: Number(sales.rows[0]?.proposals || 0), won: Number(sales.rows[0]?.won || 0), lost: Number(sales.rows[0]?.lost || 0),
+        pipeline_value: Number(sales.rows[0]?.pipeline_value || 0), won_value: Number(sales.rows[0]?.won_value || 0), pending_drafts: Number(sales.rows[0]?.pending_drafts || 0),
+        conversion: (() => {
+          const created = Number(sales.rows[0]?.created || 0);
+          return {
+            qualified: created ? Math.round(Number(sales.rows[0]?.qualified || 0) / created * 100) : 0,
+            meetings: created ? Math.round(Number(sales.rows[0]?.meetings || 0) / created * 100) : 0,
+            proposals: created ? Math.round(Number(sales.rows[0]?.proposals || 0) / created * 100) : 0,
+            won: created ? Math.round(Number(sales.rows[0]?.won || 0) / created * 100) : 0,
+          };
+        })(),
+        by_assignee: sales.rows[0]?.by_assignee || [], by_service: sales.rows[0]?.by_service || [],
+      },
       recent_events: events.rows,
     };
   }

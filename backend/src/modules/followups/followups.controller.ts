@@ -10,10 +10,10 @@ export class FollowupsController {
 
   @Post()
   @Roles('owner', 'admin')
-  schedule(@Body() body: ScheduleFollowupInput) {
+  schedule(@TenantId() companyId: string, @Body() body: ScheduleFollowupInput) {
     return this.followups.schedule({
       ...body,
-      company_id: body.company_id || 'sabero',
+      company_id: companyId,
     });
   }
 

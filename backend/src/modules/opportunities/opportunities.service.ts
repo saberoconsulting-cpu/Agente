@@ -2,13 +2,21 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { AuditService } from '../audit/audit.service';
 import { DatabaseService } from '../database/database.service';
 import { EventsService } from '../events/events.service';
+import { FollowupsService } from '../followups/followups.service';
+import { QueueService } from '../queue/queue.service';
 
 const stages = ['nuevo', 'calificado', 'reunion_propuesta', 'reunion_agendada', 'propuesta', 'ganado', 'perdido'];
 const closedStages = ['ganado', 'perdido'];
 
 @Injectable()
 export class OpportunitiesService {
-  constructor(private readonly db: DatabaseService, private readonly events: EventsService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly events: EventsService,
+    private readonly audit: AuditService,
+    private readonly followups: FollowupsService,
+    private readonly queue: QueueService,
+  ) {}
 
   async list(companyId: string, filters: { stage?: string; assignee_id?: string; min_score?: number } = {}) {
     const result = await this.db.query(
@@ -95,6 +103,107 @@ export class OpportunitiesService {
     return result.rows[0];
   }
 
+  async listFollowupDrafts(companyId: string, status?: string) {
+    const allowed = ['pending', 'approved', 'rejected', 'sent', 'blocked'];
+    if (status && !allowed.includes(status)) throw new BadRequestException('Invalid draft status');
+    const result = await this.db.query(
+      `select d.*, o.stage, o.score, l.name as lead_name, l.whatsapp_number, u.email as assignee_email
+       from opportunity_followup_drafts d
+       join opportunities o on o.id = d.opportunity_id and o.company_id = d.company_id
+       join leads l on l.id = o.lead_id
+       left join admin_users u on u.id = o.assignee_id
+       where d.company_id = $1 and ($2::text is null or d.status = $2)
+       order by case d.priority when 'high' then 0 else 1 end, d.created_at desc
+       limit 100`,
+      [companyId, status || null],
+    );
+    return result.rows;
+  }
+
+  async approveFollowupDraft(companyId: string, id: string, actorId: string, input: { message?: string; template_name?: string }) {
+    const draft = await this.db.query<{ id: string; opportunity_id: string; lead_id: string; conversation_id: string | null; whatsapp_number: string; message: string; template_name: string | null }>(
+      `select d.id, d.opportunity_id, o.lead_id, o.conversation_id, l.whatsapp_number, d.message, d.template_name
+       from opportunity_followup_drafts d join opportunities o on o.id = d.opportunity_id
+       join leads l on l.id = o.lead_id
+       where d.id = $1 and d.company_id = $2 and d.status = 'pending'`, [id, companyId]);
+    if (!draft.rowCount) throw new BadRequestException('Draft is not pending or does not exist');
+    const message = (input.message || draft.rows[0].message).trim();
+    if (!message || message.length > 2000) throw new BadRequestException('Message must contain between 1 and 2000 characters');
+    const claimed = await this.db.query(
+      `update opportunity_followup_drafts set status = 'approved', message = $3, template_name = $4,
+       reviewed_by = $5, reviewed_at = now(), updated_at = now()
+       where id = $1 and company_id = $2 and status = 'pending' returning *`,
+      [id, companyId, message, input.template_name?.trim() || draft.rows[0].template_name, actorId],
+    );
+    if (!claimed.rowCount) throw new BadRequestException('Draft was already resolved');
+    try {
+      const followup = await this.followups.schedule({
+        company_id: companyId,
+        lead_id: draft.rows[0].lead_id,
+        conversation_id: draft.rows[0].conversation_id || undefined,
+        recipient: draft.rows[0].whatsapp_number,
+        message,
+        template_name: input.template_name?.trim() || draft.rows[0].template_name || undefined,
+        scheduled_at: new Date().toISOString(),
+        reason: 'Approved opportunity follow-up draft',
+        idempotency_key: `opportunity-draft:${id}`,
+        opportunity_followup_draft_id: id,
+      });
+      await this.db.query(`update opportunity_followup_drafts set followup_id = $3, updated_at = now() where id = $1 and company_id = $2`, [id, companyId, followup.id]);
+      await this.activity(companyId, draft.rows[0].opportunity_id, actorId, 'opportunity.followup_draft_approved', 'Borrador de seguimiento aprobado');
+      return followup;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      await this.db.query(`update opportunity_followup_drafts set status = 'blocked', rejection_reason = $3, updated_at = now() where id = $1 and company_id = $2`, [id, companyId, reason.slice(0, 1000)]);
+      await this.activity(companyId, draft.rows[0].opportunity_id, actorId, 'opportunity.followup_draft_blocked', reason.slice(0, 1000));
+      throw error;
+    }
+  }
+
+  async rejectFollowupDraft(companyId: string, id: string, actorId: string, reason?: string) {
+    const result = await this.db.query<{ opportunity_id: string }>(
+      `update opportunity_followup_drafts set status = 'rejected', rejection_reason = $3, reviewed_by = $4,
+       reviewed_at = now(), updated_at = now() where id = $1 and company_id = $2 and status = 'pending' returning opportunity_id`,
+      [id, companyId, reason?.trim().slice(0, 1000) || 'Descartado por el equipo comercial', actorId],
+    );
+    if (!result.rowCount) throw new BadRequestException('Draft is not pending or does not exist');
+    await this.activity(companyId, result.rows[0].opportunity_id, actorId, 'opportunity.followup_draft_rejected', 'Borrador de seguimiento descartado');
+    return { id, status: 'rejected' };
+  }
+
+  async reviewFollowupDrafts(companyId: string) {
+    const rules = [
+      { key: 'proposal_stale', priority: 'high', where: `o.stage = 'propuesta' and o.last_activity_at <= now() - interval '72 hours'`, message: `Hola {name}, quería retomar la propuesta${'{service}'}. ¿Pudiste revisarla? Estoy disponible para resolver cualquier duda.` },
+      { key: 'meeting_proposal_stale', priority: 'normal', where: `o.stage = 'reunion_propuesta' and o.last_activity_at <= now() - interval '24 hours'`, message: `Hola {name}, quería saber si te viene bien que coordinemos una reunión breve para revisar tu necesidad${'{service}'}.` },
+      { key: 'meeting_upcoming', priority: 'high', where: `o.stage = 'reunion_agendada' and exists (select 1 from meetings m where m.company_id = o.company_id and m.lead_id = o.lead_id and m.status = 'booked' and m.start_time between now() and now() + interval '24 hours')`, message: `Hola {name}, te recordamos nuestra reunión próxima${'{service}'}. Si necesitas reprogramarla, avísanos por este medio.` },
+      { key: 'opportunity_inactive', priority: 'normal', where: `o.stage not in ('ganado', 'perdido') and o.last_activity_at <= now() - interval '48 hours'`, message: `Hola {name}, quería retomar nuestra conversación${'{service}'}. ¿Hay algún punto en el que podamos ayudarte?` },
+    ];
+    let created = 0;
+    for (const rule of rules) {
+      const result = await this.db.query<{ id: string; opportunity_id: string }>(
+        `insert into opportunity_followup_drafts (company_id, opportunity_id, rule_key, priority, message)
+         select o.company_id, o.id, $2, $3,
+           replace(replace($4, '{name}', coalesce(l.name, '')), '{service}', case when o.service_interest is null then '' else ' sobre ' || o.service_interest end)
+         from opportunities o join leads l on l.id = o.lead_id
+         where o.company_id = $1 and ${rule.where}
+           and not exists (
+             select 1 from opportunity_followup_drafts d where d.opportunity_id = o.id and d.rule_key = $2
+             and (d.status = 'pending' or d.updated_at > now() - interval '7 days')
+           ) returning id, opportunity_id`,
+        [companyId, rule.key, rule.priority, rule.message],
+      );
+      created += result.rowCount || 0;
+      for (const draft of result.rows) await this.activity(companyId, draft.opportunity_id, undefined, 'opportunity.followup_draft_created', `Borrador creado: ${rule.key}`);
+    }
+    return { created };
+  }
+
+  async enqueueReviewAllCompanies() {
+    const companies = await this.db.query<{ id: string }>('select id from companies');
+    const bucket = Math.floor(Date.now() / (15 * 60 * 1000));
+    await Promise.all(companies.rows.map((company) => this.queue.enqueue('opportunity.review', company.id, {}, new Date(), `opportunity-review:${bucket}`)));
+  }
+
   private score(q: Record<string, string>, updatedAt: string) {
     const weights: Record<string, number> = { need: 20, scope: 15, urgency: 15, budget: 20, authority: 20 };
     const signals: Record<string, boolean> = {};
@@ -105,9 +214,9 @@ export class OpportunitiesService {
     return { score, signals };
   }
 
-  private async activity(companyId: string, id: string, actorId: string, type: string, content: string) {
+  private async activity(companyId: string, id: string, actorId: string | undefined, type: string, content: string) {
     await this.db.query(`insert into opportunity_activities (company_id, opportunity_id, actor_id, activity_type, content) values ($1,$2,$3,$4,$5)`, [companyId, id, actorId, type, content]);
     await this.events.record({ companyId, eventType: type, aggregateType: 'opportunity', aggregateId: id, payload: { content } });
-    await this.audit.record({ companyId, actorType: 'admin_user', actorId, action: type, resourceType: 'opportunity', resourceId: id, metadata: { content } });
+    await this.audit.record({ companyId, actorType: actorId ? 'admin_user' : 'system', actorId, action: type, resourceType: 'opportunity', resourceId: id, metadata: { content } });
   }
 }

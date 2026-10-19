@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
-export type QueueJobType = 'followup.process' | 'drive.sync';
+export type QueueJobType = 'followup.process' | 'drive.sync' | 'opportunity.review';
 
 @Injectable()
 export class QueueService {

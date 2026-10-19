@@ -8,6 +8,9 @@ import { OpportunitiesService } from './opportunities.service';
 export class OpportunitiesController {
   constructor(private readonly opportunities: OpportunitiesService) {}
   @Get() list(@TenantId() companyId: string, @Query('stage') stage?: string, @Query('assignee_id') assigneeId?: string, @Query('min_score') minScore?: string) { return this.opportunities.list(companyId, { stage, assignee_id: assigneeId, min_score: minScore ? Number(minScore) : undefined }); }
+  @Get('followup-drafts') drafts(@TenantId() companyId: string, @Query('status') status?: string) { return this.opportunities.listFollowupDrafts(companyId, status); }
+  @Post('followup-drafts/:id/approve') @Roles('owner','admin') approveDraft(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Param('id') id: string, @Body() body: { message?: string; template_name?: string }) { return this.opportunities.approveFollowupDraft(companyId, id, user.sub, body); }
+  @Post('followup-drafts/:id/reject') @Roles('owner','admin') rejectDraft(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Param('id') id: string, @Body() body: { reason?: string }) { return this.opportunities.rejectFollowupDraft(companyId, id, user.sub, body.reason); }
   @Get(':id') detail(@TenantId() companyId: string, @Param('id') id: string) { return this.opportunities.detail(companyId, id); }
   @Post() @Roles('owner','admin') create(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Body() body: { lead_id: string; conversation_id?: string; service_interest?: string }) { return this.opportunities.create(companyId, user.sub, body); }
   @Patch(':id/confirm') @Roles('owner','admin') confirm(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Param('id') id: string) { return this.opportunities.confirm(companyId, id, user.sub); }

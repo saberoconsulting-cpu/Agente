@@ -22,7 +22,7 @@ import {
   Target,
 } from 'lucide-react';
 import { apiRequest, clearToken, SessionUser } from '../lib/api';
-import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity } from '../lib/types';
+import type { AgentSettings, DashboardSummary, DriveFile, Meeting, Opportunity, OpportunityFollowupDraft } from '../lib/types';
 import { Brand } from './brand';
 import { Button, Panel, StatusPill } from './ui';
 
@@ -113,6 +113,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   const [users, setUsers] = useState<SessionUser[]>([]);
   const [log, setLog] = useState<string[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [followupDrafts, setFollowupDrafts] = useState<OpportunityFollowupDraft[]>([]);
 
   const companyId = user?.company_id || 'sabero';
 
@@ -140,7 +141,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   async function bootstrap() {
     const current = await apiRequest<SessionUser>('/auth/me');
     setUser(current);
-    await Promise.all([loadSummary(current.company_id), loadSettings(current.company_id), loadFiles(current.company_id), loadUsers(current.company_id), loadOpportunities()]);
+    await Promise.all([loadSummary(current.company_id), loadSettings(current.company_id), loadFiles(current.company_id), loadUsers(current.company_id), loadOpportunities(), loadFollowupDrafts()]);
   }
 
   async function loadSummary(id = companyId) {
@@ -159,6 +160,8 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
     setUsers(await apiRequest<SessionUser[]>(`/auth/users?company_id=${id}`));
   }
   async function loadOpportunities() { setOpportunities(await apiRequest<Opportunity[]>('/opportunities')); }
+  async function loadFollowupDrafts() { setFollowupDrafts(await apiRequest<OpportunityFollowupDraft[]>('/opportunities/followup-drafts?status=pending')); }
+  async function reloadCommercial() { await Promise.all([loadSummary(), loadOpportunities(), loadFollowupDrafts()]); }
 
   function pushLog(message: string) {
     setLog((items) => [`${new Date().toLocaleTimeString()}  ${message}`, ...items].slice(0, 12));
@@ -223,8 +226,8 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
         </header>
 
         <div className="grid gap-6 p-5 xl:p-10">
-          {view === 'overview' && <Overview summary={summary} log={log} />}
-          {view === 'opportunities' && <Opportunities items={opportunities} users={users} reload={loadOpportunities} />}
+          {view === 'overview' && <Overview summary={summary} log={log} drafts={followupDrafts} canOperate={Boolean(user && ['owner', 'admin'].includes(user.role))} reload={reloadCommercial} />}
+          {view === 'opportunities' && <Opportunities items={opportunities} users={users} drafts={followupDrafts} canOperate={Boolean(user && ['owner', 'admin'].includes(user.role))} reload={reloadCommercial} />}
           {view === 'links' && <Links companyId={companyId} pushLog={pushLog} reload={() => loadSummary()} />}
           {view === 'knowledge' && <Knowledge companyId={companyId} files={files} reload={loadFiles} pushLog={pushLog} />}
           {view === 'agent' && <AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} />}
@@ -235,7 +238,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   );
 }
 
-function Overview({ summary, log }: { summary: DashboardSummary | null; log: string[] }) {
+function Overview({ summary, log, drafts, canOperate, reload }: { summary: DashboardSummary | null; log: string[]; drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void> }) {
   const metrics = [
     ['Leads', summary?.metrics.leads ?? 0, Users],
     ['Conversaciones', summary?.metrics.conversations ?? 0, MessageCircle],
@@ -276,18 +279,37 @@ function Overview({ summary, log }: { summary: DashboardSummary | null; log: str
           </div>
         </Panel>
       </div>
+      <Panel>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Rendimiento comercial</p><h2 className="mt-2 text-2xl font-black text-sabero-navy">Mes actual</h2></div><StatusPill active={Boolean(summary?.sales?.pending_drafts)} label={`${summary?.sales?.pending_drafts || 0} por aprobar`} /></div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Creadas', summary?.sales?.created || 0], ['Calificadas', summary?.sales?.qualified || 0], ['Reuniones', summary?.sales?.meetings || 0], ['Propuestas', summary?.sales?.proposals || 0], ['Ganadas', summary?.sales?.won || 0], ['Perdidas', summary?.sales?.lost || 0]].map(([label, value]) => <div key={String(label)} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-500">{label}</p><strong className="mt-2 block text-2xl text-sabero-navy">{value}</strong></div>)}</div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-xs font-black uppercase text-slate-500">Valor en pipeline</p><strong className="mt-2 block text-2xl text-sabero-navy">{formatMoney(summary?.sales?.pipeline_value || 0)}</strong></div><div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-xs font-black uppercase text-slate-500">Valor ganado</p><strong className="mt-2 block text-2xl text-emerald-700">{formatMoney(summary?.sales?.won_value || 0)}</strong></div></div>
+        <div className="mt-5 flex flex-wrap gap-3">{[['Calificación', summary?.sales?.conversion.qualified || 0], ['Reunión', summary?.sales?.conversion.meetings || 0], ['Propuesta', summary?.sales?.conversion.proposals || 0], ['Cierre', summary?.sales?.conversion.won || 0]].map(([label, value]) => <StatusPill key={String(label)} active={Number(value) > 0} label={`${label} ${value}%`} />)}</div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2"><Breakdown title="Por responsable" rows={summary?.sales?.by_assignee || []} /><Breakdown title="Por servicio" rows={summary?.sales?.by_service || []} /></div>
+      </Panel>
+      <DraftInbox drafts={drafts} canOperate={canOperate} reload={reload} />
     </>
   );
 }
 
-function Opportunities({ items, users, reload }: { items: Opportunity[]; users: SessionUser[]; reload: () => Promise<void> }) {
+function Opportunities({ items, users, drafts, canOperate, reload }: { items: Opportunity[]; users: SessionUser[]; drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void> }) {
   const stages = [['nuevo', 'Nuevas'], ['calificado', 'Calificadas'], ['reunion_propuesta', 'Reunión'], ['reunion_agendada', 'Agendadas'], ['propuesta', 'Propuestas'], ['ganado', 'Ganadas']] as const;
   async function move(id: string, stage: string) { await apiRequest(`/opportunities/${id}/stage`, { method: 'PATCH', body: JSON.stringify({ stage }) }); await reload(); }
   async function handoff(id: string, assigneeId: string) { if (!assigneeId) return; await apiRequest(`/opportunities/${id}/handoff`, { method: 'POST', body: JSON.stringify({ assignee_id: assigneeId }) }); await reload(); }
   async function proposal(id: string) { await apiRequest(`/opportunities/${id}/proposals`, { method: 'POST' }); await reload(); }
   const sellers = users.filter((item) => item.active !== false && ['owner', 'admin'].includes(item.role));
-  return <div className="grid gap-6"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-[.22em] text-sabero-crimson">Embudo comercial</p><h2 className="mt-2 text-3xl font-black text-sabero-navy">Oportunidades</h2></div><Button variant="ghost" onClick={() => void reload()}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button></div><div className="grid gap-4 xl:grid-cols-3">{stages.map(([stage, label]) => <Panel key={stage}><h3 className="font-black text-sabero-navy">{label}</h3><div className="mt-4 grid gap-3">{items.filter((item) => item.stage === stage).map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-sabero-navy">{item.lead_name || item.whatsapp_number}</p><p className="mt-1 text-xs font-bold text-slate-500">Score {item.score} · {item.assignee_email || 'Sin asignar'}</p>{item.score >= 60 && !item.assignee_email && <select aria-label="Asignar vendedor" defaultValue="" onChange={(event) => void handoff(item.id, event.target.value)} className="mt-3 min-h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-sabero-navy"><option value="">Derivar a vendedor…</option>{sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.email}</option>)}</select>}<div className="mt-3 flex flex-wrap gap-2">{stage === 'nuevo' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'calificado')}>Confirmar</Button>}{stage === 'calificado' && <><Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'reunion_propuesta')}>Proponer reunión</Button><Button variant="ghost" className="min-h-9 px-3 text-xs" onClick={() => void proposal(item.id)}>Crear propuesta</Button></>}{stage === 'propuesta' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'ganado')}>Marcar ganada</Button>}</div></div>)}</div></Panel>)}</div></div>;
+  return <div className="grid gap-6"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-[.22em] text-sabero-crimson">Embudo comercial</p><h2 className="mt-2 text-3xl font-black text-sabero-navy">Oportunidades</h2></div><Button variant="ghost" onClick={() => void reload()}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button></div><DraftInbox drafts={drafts} canOperate={canOperate} reload={reload} compact /><div className="grid gap-4 xl:grid-cols-3">{stages.map(([stage, label]) => <Panel key={stage}><h3 className="font-black text-sabero-navy">{label}</h3><div className="mt-4 grid gap-3">{items.filter((item) => item.stage === stage).map((item) => <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-black text-sabero-navy">{item.lead_name || item.whatsapp_number}</p><p className="mt-1 text-xs font-bold text-slate-500">Score {item.score} · {item.assignee_email || 'Sin asignar'}</p>{item.score >= 60 && !item.assignee_email && <select aria-label="Asignar vendedor" defaultValue="" onChange={(event) => void handoff(item.id, event.target.value)} className="mt-3 min-h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-sabero-navy"><option value="">Derivar a vendedor…</option>{sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.email}</option>)}</select>}<div className="mt-3 flex flex-wrap gap-2">{stage === 'nuevo' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'calificado')}>Confirmar</Button>}{stage === 'calificado' && <><Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'reunion_propuesta')}>Proponer reunión</Button><Button variant="ghost" className="min-h-9 px-3 text-xs" onClick={() => void proposal(item.id)}>Crear propuesta</Button></>}{stage === 'propuesta' && <Button className="min-h-9 px-3 text-xs" onClick={() => void move(item.id, 'ganado')}>Marcar ganada</Button>}</div></div>)}</div></Panel>)}</div></div>;
 }
+
+function Breakdown({ title, rows }: { title: string; rows: Array<{ label: string; count: number; value: string }> }) { return <div className="rounded-2xl border border-slate-200 p-4"><p className="text-xs font-black uppercase tracking-[.16em] text-slate-500">{title}</p><div className="mt-3 grid gap-2">{rows.length ? rows.map((row) => <div key={row.label} className="flex justify-between gap-3 text-sm"><span className="font-bold text-sabero-navy">{row.label}</span><span className="text-slate-500">{row.count} · {formatMoney(Number(row.value))}</span></div>) : <p className="text-sm text-slate-500">Sin datos todavía.</p>}</div></div>; }
+
+function DraftInbox({ drafts, canOperate, reload, compact = false }: { drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void>; compact?: boolean }) {
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  async function approve(draft: OpportunityFollowupDraft) { const template = window.prompt('Nombre de plantilla aprobada (déjalo vacío si estás dentro de la ventana de 24 h):', draft.template_name || '') || undefined; await apiRequest(`/opportunities/followup-drafts/${draft.id}/approve`, { method: 'POST', body: JSON.stringify({ message: edits[draft.id] || draft.message, template_name: template }) }); await reload(); }
+  async function reject(draft: OpportunityFollowupDraft) { const reason = window.prompt('Motivo para descartar el seguimiento:', ''); await apiRequest(`/opportunities/followup-drafts/${draft.id}/reject`, { method: 'POST', body: JSON.stringify({ reason: reason || undefined }) }); await reload(); }
+  return <Panel className={compact ? 'p-5' : undefined}><div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[.2em] text-sabero-crimson">Seguimientos por aprobar</p><h2 className="mt-2 text-xl font-black text-sabero-navy">{drafts.length} pendientes</h2></div><StatusPill active={drafts.length > 0} label={drafts.length ? 'Acción requerida' : 'Al día'} /></div><div className="mt-4 grid gap-3">{drafts.length ? drafts.map((draft) => <div key={draft.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-wrap justify-between gap-2"><p className="font-black text-sabero-navy">{draft.lead_name || draft.whatsapp_number}</p><StatusPill active={draft.priority === 'high'} label={draft.priority === 'high' ? 'Alta prioridad' : 'Normal'} /></div><p className="mt-1 text-xs font-bold text-slate-500">{draft.rule_key.replaceAll('_', ' ')} · {draft.assignee_email || 'Sin responsable'}</p>{canOperate ? <><textarea aria-label={`Mensaje para ${draft.lead_name || draft.whatsapp_number}`} value={edits[draft.id] ?? draft.message} onChange={(event) => setEdits((current) => ({ ...current, [draft.id]: event.target.value }))} className="mt-3 min-h-20 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700" /><div className="mt-3 flex flex-wrap gap-2"><Button className="min-h-9 px-3 text-xs" onClick={() => void approve(draft)}>Aprobar y enviar</Button><Button variant="danger" className="min-h-9 px-3 text-xs" onClick={() => void reject(draft)}>Descartar</Button></div></> : <p className="mt-3 text-sm text-slate-600">{draft.message}</p>}</div>) : <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">No hay seguimientos pendientes.</p>}</div></Panel>;
+}
+
+function formatMoney(value: number) { return new Intl.NumberFormat('es-PE', { style: 'currency', currency: 'PEN', maximumFractionDigits: 0 }).format(value); }
 
 function Links({ companyId, pushLog, reload }: { companyId: string; pushLog: (m: string) => void; reload: () => void }) {
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsAppEmbeddedSignupConfig | null>(null);

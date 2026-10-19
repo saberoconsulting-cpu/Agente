@@ -4,6 +4,7 @@ import { DatabaseService } from '../database/database.service';
 import { EventsService } from '../events/events.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { QueueService } from '../queue/queue.service';
+import { AuditService } from '../audit/audit.service';
 
 export type ScheduleFollowupInput = {
   company_id?: string;
@@ -15,6 +16,7 @@ export type ScheduleFollowupInput = {
   template_name?: string;
   reason?: string;
   idempotency_key?: string;
+  opportunity_followup_draft_id?: string;
 };
 
 @Injectable()
@@ -25,6 +27,7 @@ export class FollowupsService {
     private readonly whatsapp: WhatsappService,
     private readonly events: EventsService,
     private readonly queue: QueueService,
+    private readonly audit: AuditService,
   ) {}
 
   async schedule(input: ScheduleFollowupInput) {
@@ -50,9 +53,9 @@ export class FollowupsService {
     const result = await this.db.query(
       `insert into followups (
          company_id, lead_id, conversation_id, recipient, message, template_name,
-         scheduled_at, reason, idempotency_key
+         scheduled_at, reason, idempotency_key, opportunity_followup_draft_id
        )
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        on conflict (company_id, idempotency_key)
        do update set updated_at = now()
        returning *`,
@@ -66,6 +69,7 @@ export class FollowupsService {
         input.scheduled_at,
         input.reason || null,
         input.idempotency_key || null,
+        input.opportunity_followup_draft_id || null,
       ],
     );
 
@@ -106,6 +110,11 @@ export class FollowupsService {
           `update followups set status = 'sent', sent_at = now(), updated_at = now() where id = $1`,
           [followup.id],
         );
+        await this.db.query(
+          `update opportunity_followup_drafts set status = 'sent', updated_at = now() where followup_id = $1 and status = 'approved'`,
+          [followup.id],
+        );
+        if (followup.opportunity_followup_draft_id) await this.audit.record({ companyId, action: 'opportunity.followup_draft_sent', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunity_followup_draft_id });
         await this.events.record({
           companyId,
           eventType: 'followup.sent',
@@ -120,6 +129,11 @@ export class FollowupsService {
           `update followups set status = 'blocked', reason = $2, updated_at = now() where id = $1`,
           [followup.id, message],
         );
+        await this.db.query(
+          `update opportunity_followup_drafts set status = 'blocked', rejection_reason = $2, updated_at = now() where followup_id = $1 and status = 'approved'`,
+          [followup.id, message],
+        );
+        if (followup.opportunity_followup_draft_id) await this.audit.record({ companyId, action: 'opportunity.followup_draft_blocked', resourceType: 'opportunity_followup_draft', resourceId: followup.opportunity_followup_draft_id, metadata: { reason: message } });
         await this.events.record({
           companyId,
           eventType: 'followup.blocked',

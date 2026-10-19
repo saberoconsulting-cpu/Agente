@@ -469,6 +469,20 @@ create table if not exists opportunity_proposals (
   title text not null, content text not null, created_by uuid references admin_users(id), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create index if not exists opportunity_proposals_opportunity_idx on opportunity_proposals(opportunity_id, created_at desc);
+create table if not exists opportunity_followup_drafts (
+  id uuid primary key default gen_random_uuid(), company_id text not null references companies(id),
+  opportunity_id uuid not null references opportunities(id) on delete cascade,
+  rule_key text not null, priority text not null default 'normal', message text not null,
+  template_name text, status text not null default 'pending', rejection_reason text,
+  reviewed_by uuid references admin_users(id), reviewed_at timestamptz,
+  followup_id uuid, created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+  check (rule_key in ('proposal_stale','meeting_proposal_stale','meeting_upcoming','opportunity_inactive')),
+  check (status in ('pending','approved','rejected','sent','blocked'))
+);
+create index if not exists opportunity_followup_drafts_company_status_idx on opportunity_followup_drafts(company_id, status, created_at desc);
+create index if not exists opportunity_followup_drafts_opportunity_rule_idx on opportunity_followup_drafts(opportunity_id, rule_key, updated_at desc);
+alter table followups add column if not exists opportunity_followup_draft_id uuid references opportunity_followup_drafts(id);
+create unique index if not exists followups_opportunity_followup_draft_unique on followups(opportunity_followup_draft_id) where opportunity_followup_draft_id is not null;
 `;
 
 async function main() {
