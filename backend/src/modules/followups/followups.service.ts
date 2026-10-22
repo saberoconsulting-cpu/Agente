@@ -6,6 +6,7 @@ import { EventsService } from '../events/events.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { QueueService } from '../queue/queue.service';
 import { AuditService } from '../audit/audit.service';
+import { MessageStore } from '../platform/message-store.service';
 
 export type ScheduleFollowupInput = {
   company_id?: string;
@@ -29,6 +30,7 @@ export class FollowupsService {
     private readonly events: EventsService,
     private readonly queue: QueueService,
     private readonly audit: AuditService,
+    private readonly messages: MessageStore,
   ) {}
 
   async schedule(input: ScheduleFollowupInput) {
@@ -114,8 +116,8 @@ export class FollowupsService {
     await this.ensureCanSchedule(companyId, recipient);
 
     const conversations = await this.prisma.conversation.findMany({ where: { companyId, externalId: recipient }, select: { id: true } });
-    const window = conversations.length ? await this.prisma.message.aggregate({ where: { companyId, direction: 'inbound', conversationId: { in: conversations.map((item) => item.id) } }, _max: { createdAt: true } }) : null;
-    const lastInbound = window?._max.createdAt || null;
+    const summaries = await this.messages.summary(companyId, conversations.map(item => item.id), 'inbound');
+    const lastInbound = summaries.length ? new Date(Math.max(...summaries.map(item => item.lastMessageAt.getTime()))) : null;
     const inside24h = lastInbound
       ? Date.now() - lastInbound.getTime() <= 24 * 60 * 60 * 1000
       : false;

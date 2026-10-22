@@ -1,0 +1,25 @@
+{
+  "name": "sabero-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "local:up": "node src/local.mjs up",
+    "local:check": "node src/local.mjs check",
+    "local:smoke": "node src/local-smoke.mjs",
+    "local:whatsapp": "node src/local.mjs whatsapp",
+    "local:down": "node src/local.mjs down",
+    "local:restart": "node src/local.mjs restart",
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "admin": "node --env-file-if-exists=.env src/admin.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "libphonenumber-js": "^1.13.15",
+    "mongodb": "^6.20.0",
+    "pg": "^8.13.1"
+  }
+}

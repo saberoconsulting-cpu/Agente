@@ -24,6 +24,8 @@ describe('WhatsappService connection resolution', () => {
       {} as any,
       {} as any,
       connections as any,
+      {} as any,
+      { managed: false, assertCompany: jest.fn() } as any,
     );
 
     return { service, config, connections };
@@ -66,5 +68,42 @@ describe('WhatsappService connection resolution', () => {
       token: 'global-token',
       phoneNumberId: 'global-phone',
     });
+  });
+
+  it('accepts WHATSAPP_ACCESS_TOKEN when META_ACCESS_TOKEN is absent', async () => {
+    const { service, config } = createService();
+    config.get.mockImplementation((key: string) => ({
+      WHATSAPP_ACCESS_TOKEN: 'permanent-token',
+      WHATSAPP_TOKEN: 'legacy-token',
+      WHATSAPP_PHONE_NUMBER_ID: 'real-phone',
+    } as Record<string, string>)[key]);
+    await expect((service as any).resolveSendCredentials()).resolves.toEqual({
+      token: 'permanent-token', phoneNumberId: 'real-phone',
+    });
+  });
+
+  it('routes a received message to the agent and sends its answer', async () => {
+    const { service } = createService();
+    const agent = { respondToMessage: jest.fn().mockResolvedValue({ answer: 'Hola desde SABERO' }) };
+    (service as any).salesAgent = agent;
+    const send = jest.spyOn(service as any, 'sendText').mockResolvedValue(undefined);
+    await (service as any).processInboundMessage(
+      { id: 'inbound-1', from: '51900000000', text: { body: 'Hola' } },
+      { conversationId: 'conversation-1', leadId: 'lead-1' },
+    );
+    expect(agent.respondToMessage).toHaveBeenCalledWith({ companyId: 'sabero', message: 'Hola',
+      conversationId: 'conversation-1', leadId: 'lead-1', inboundMessageId: 'inbound-1' });
+    expect(send).toHaveBeenCalledWith('51900000000', 'Hola desde SABERO', 'sabero');
+  });
+
+  it('does not generate another answer for a duplicate webhook message', async () => {
+    const { service } = createService();
+    jest.spyOn(service as any, 'saveInboundEvent').mockResolvedValue('event-1');
+    jest.spyOn(service as any, 'upsertInboundMessage').mockResolvedValue({ inserted: false });
+    const process = jest.spyOn(service as any, 'processInboundMessage').mockResolvedValue(undefined);
+    await service.receiveWebhook({ entry: [{ changes: [{ value: { messages: [
+      { id: 'duplicate', from: '51900000000', type: 'text', text: { body: 'Hola' } },
+    ] } }] }] });
+    expect(process).not.toHaveBeenCalled();
   });
 });

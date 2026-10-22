@@ -5,6 +5,18 @@ import { DatabaseService } from '../database/database.service';
 export class DashboardService {
   constructor(private readonly db: DatabaseService) {}
 
+  async usage(companyId: string) {
+    const result = await this.db.query(`select count(*)::int as requests,
+      count(*) filter(where payload->>'total_tokens' is not null)::int as measured_requests,
+      coalesce(sum((payload->>'prompt_tokens')::bigint),0)::text as input_tokens,
+      coalesce(sum((payload->>'completion_tokens')::bigint),0)::text as output_tokens,
+      coalesce(sum((payload->>'total_tokens')::bigint),0)::text as total_tokens,
+      min(created_at) as first_recorded_at
+      from agent_events where company_id=$1 and event_type='ai.completion'
+      and created_at >= date_trunc('month',now())`, [companyId]);
+    return { company_id: companyId, period: 'current_month', ...result.rows[0] };
+  }
+
   async summary(companyId: string) {
     const [
       leads,

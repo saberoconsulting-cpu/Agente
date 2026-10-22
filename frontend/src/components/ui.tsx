@@ -10,7 +10,7 @@ export function Panel({
   return (
     <section
       className={clsx(
-        'rounded-[22px] border border-slate-200/80 bg-white/92 p-6 shadow-enterprise backdrop-blur',
+        'min-w-0 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm',
         className,
       )}
     >

@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Script from 'next/script';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -18,12 +17,12 @@ export const metadata: Metadata = {
     'arquitectura cloud',
     'RAG empresarial',
   ],
-  metadataBase: new URL('https://agent.saberoconsulting.com'),
+  metadataBase: new URL('https://agente.saberoconsulting.com'),
   openGraph: {
     title: 'SABERO AI Sales Engine',
     description:
       'Agentes comerciales con IA para vender, calificar leads y cerrar reuniones desde WhatsApp.',
-    url: 'https://agent.saberoconsulting.com',
+    url: 'https://agente.saberoconsulting.com',
     siteName: 'SABERO AI Sales Engine',
     images: [{ url: '/logo.png', width: 1200, height: 630, alt: 'SABERO AI Sales Engine' }],
     locale: 'es_PE',
@@ -45,8 +44,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body>
         {children}
-        <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
-        <Script src="https://apis.google.com/js/api.js" strategy="afterInteractive" />
       </body>
     </html>
   );

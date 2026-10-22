@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'crypto';
 import { google } from 'googleapis';
@@ -79,9 +79,13 @@ export class GoogleCalendarService {
       },
     });
 
+    const calendarResult = response.data.calendars?.[calendarId];
+    if (!calendarResult || calendarResult.errors?.length || !Array.isArray(calendarResult.busy)) {
+      throw new ServiceUnavailableException('Calendar availability could not be verified');
+    }
     return {
       calendar_id: calendarId,
-      busy: response.data.calendars?.[calendarId]?.busy || [],
+      busy: calendarResult.busy,
       raw: response.data,
     };
   }

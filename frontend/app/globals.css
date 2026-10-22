@@ -12,6 +12,15 @@
 
 html {
   scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+.dashboard-navigation {
+  scrollbar-width: none;
+}
+
+.dashboard-navigation::-webkit-scrollbar {
+  display: none;
 }
 
 body {

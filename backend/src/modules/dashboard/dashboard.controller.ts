@@ -10,4 +10,9 @@ export class DashboardController {
   summary(@TenantId() companyId: string) {
     return this.dashboard.summary(companyId);
   }
+
+  @Get('usage')
+  usage(@TenantId() companyId: string) {
+    return this.dashboard.usage(companyId);
+  }
 }

@@ -12,6 +12,7 @@ out/
 next-env.d.ts
 
 # Variables de entorno; conservar las plantillas
+client_secret_*.json
 .env
 .env.*
 !.env.example

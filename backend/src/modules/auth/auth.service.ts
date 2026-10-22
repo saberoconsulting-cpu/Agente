@@ -116,7 +116,7 @@ export class AuthService {
   async listUsers(requester: ReturnType<AuthService['verifyAccessToken']>) {
     const companyId = requester.company_id;
 
-    const users = await this.prisma.adminUser.findMany({ where: { companyId }, orderBy: { createdAt: 'asc' } });
+    const users = await this.prisma.adminUser.findMany({ where: { companyId, active: true }, orderBy: { createdAt: 'asc' } });
     return users.map((user) => this.safeUser(this.toAdminUser(user)));
   }
 

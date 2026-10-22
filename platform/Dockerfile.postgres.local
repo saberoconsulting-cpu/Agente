@@ -1,0 +1,10 @@
+FROM postgres:17-alpine AS builder
+RUN apk add --no-cache build-base
+ADD https://github.com/pgvector/pgvector/archive/refs/tags/v0.8.0.tar.gz /tmp/pgvector.tar.gz
+RUN tar -xzf /tmp/pgvector.tar.gz -C /tmp \
+ && make -C /tmp/pgvector-0.8.0 OPTFLAGS="" with_llvm=no \
+ && make -C /tmp/pgvector-0.8.0 install with_llvm=no
+
+FROM postgres:17-alpine
+COPY --from=builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/vector.so
+COPY --from=builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/

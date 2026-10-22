@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 
 export type UpdateAgentSettingsInput = {
@@ -8,6 +8,7 @@ export type UpdateAgentSettingsInput = {
   llm_provider?: string;
   llm_model?: string;
   system_rules?: string;
+  scheduling_enabled?: boolean;
 };
 
 export type UpsertServiceInput = {
@@ -55,13 +56,14 @@ export class AgentSettingsService {
 
     return {
       company_id: companyId,
-      settings: settings.rows[0] || null,
+      settings: settings.rows[0] ? { ...settings.rows[0], scheduling_enabled: policies.rows.some(policy => policy.policy_key === 'scheduling_enabled' && policy.active && policy.policy_text === 'true') } : null,
       policies: policies.rows,
       services: services.rows,
     };
   }
 
   async update(companyId: string, input: UpdateAgentSettingsInput) {
+    if (input.scheduling_enabled !== undefined && typeof input.scheduling_enabled !== 'boolean') throw new BadRequestException('scheduling_enabled must be boolean');
     const result = await this.db.query(
       `update company_agent_settings
        set agent_name = coalesce($2, agent_name),
@@ -83,6 +85,9 @@ export class AgentSettingsService {
         input.system_rules || null,
       ],
     );
+    if (result.rows[0] && input.scheduling_enabled !== undefined) {
+      await this.upsertPolicy(companyId, { policy_key: 'scheduling_enabled', policy_text: String(input.scheduling_enabled), active: true });
+    }
     return result.rows[0] || null;
   }
 

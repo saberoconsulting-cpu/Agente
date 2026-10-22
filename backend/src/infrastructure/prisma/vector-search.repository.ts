@@ -17,6 +17,10 @@ export class VectorSearchRepository {
       join knowledge_chunks kc on kc.id = ke.chunk_id and kc.company_id = ke.company_id
       join knowledge_documents kd on kd.id = kc.document_id and kd.company_id = kc.company_id
       where ke.company_id = ${companyId}
+        and kd.status = 'indexed'
+        and (kd.source_type <> 'google_drive' or exists (
+          select 1 from google_drive_files gf where gf.company_id=kd.company_id and gf.google_file_id=kd.source_id and not gf.trashed
+        ))
       order by ke.embedding <-> ${vector}::vector limit ${limit}`);
   }
 }

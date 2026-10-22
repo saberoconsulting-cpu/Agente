@@ -3,7 +3,7 @@ import { OAuthTokenCryptoService } from './oauth-token-crypto.service';
 describe('OAuthTokenCryptoService', () => {
   const config = {
     get: jest.fn((key: string) => {
-      if (key === 'OAUTH_TOKEN_ENCRYPTION_KEY') return 'test-encryption-key';
+      if (key === 'OAUTH_TOKEN_ENCRYPTION_KEY') return 'test-encryption-key-with-at-least-32-characters';
       return undefined;
     }),
   };

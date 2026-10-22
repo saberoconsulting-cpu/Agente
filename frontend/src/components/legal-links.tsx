@@ -1,0 +1,2 @@
+import Link from 'next/link';
+export function LegalLinks(){return <nav aria-label="Información legal" className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-slate-500"><Link href="/about" className="hover:text-sabero-electric">Sobre SABERO AI</Link><Link href="/privacy" className="hover:text-sabero-electric">Privacidad</Link><Link href="/terms" className="hover:text-sabero-electric">Términos y condiciones</Link></nav>;}

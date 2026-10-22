@@ -12,7 +12,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableCors({
-    origin: [
+    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',').map(value => value.trim()).filter(Boolean) : [
       'http://localhost:5173',
       'http://127.0.0.1:5173',
       'https://agent.saberoconsulting.com',
@@ -34,7 +34,7 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, document);
 
   const port = Number(process.env.PORT || 3001);
-  await app.listen(port);
+  await app.listen(port, process.env.HOST || '0.0.0.0');
   console.log(`SABERO AI Sales Engine listening on ${port}`);
 }
 

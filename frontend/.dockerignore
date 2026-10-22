@@ -1,4 +1,8 @@
 node_modules
 dist
 .env
+.env.*
+.next
+.next-dev
+.git
 npm-debug.log

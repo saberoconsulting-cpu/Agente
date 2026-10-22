@@ -1,5 +1,6 @@
 'use client';
 
+import { DeleteRecordButton, Pagination, usePagination } from '@/components/list-controls';
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { apiRequest, SessionUser } from '@/lib/api';
@@ -18,6 +19,7 @@ export function Access({ companyId, users, reload, pushLog }: { companyId: strin
     pushLog('Acceso de empresa creado.');
     await reload(companyId);
   }
+  const pagination=usePagination(users);
   return (
     <Panel>
       <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Multiempresa</p>
@@ -28,16 +30,17 @@ export function Access({ companyId, users, reload, pushLog }: { companyId: strin
         <Button variant="danger" onClick={createUser}>Crear acceso</Button>
       </div>
       <div className="mt-6 grid gap-3">
-        {users.map((item) => (
+        {pagination.items.map((item) => (
           <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
             <div>
               <p className="font-black text-sabero-navy">{item.email}</p>
               <p className="text-sm text-slate-500">{item.role}</p>
             </div>
-            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-600"/><DeleteRecordButton resource="users" id={item.id} name={item.email} reload={()=>reload(companyId)} protectedRecord={item.role==='owner'}/></div>
           </div>
         ))}
       </div>
+      <Pagination {...pagination} label="accesos"/>
     </Panel>
   );
 }

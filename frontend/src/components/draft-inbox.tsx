@@ -1,5 +1,6 @@
 'use client';
 
+import { Pagination, usePagination } from './list-controls';
 import { useState } from 'react';
 import { apiRequest } from '@/lib/api';
 import type { OpportunityFollowupDraft } from '@/lib/types';
@@ -16,6 +17,7 @@ export function DraftInbox({
   reload: () => Promise<void>;
   compact?: boolean;
 }) {
+  const pagination=usePagination(drafts);
   const [edits, setEdits] = useState<Record<string, string>>({});
 
   async function approve(draft: OpportunityFollowupDraft) {
@@ -47,7 +49,7 @@ export function DraftInbox({
       </div>
       <div className="mt-4 grid gap-3">
         {drafts.length ? (
-          drafts.map((draft) => (
+          pagination.items.map((draft) => (
             <div key={draft.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap justify-between gap-2">
                 <p className="font-black text-sabero-navy">{draft.lead_name || draft.whatsapp_number}</p>
@@ -76,6 +78,7 @@ export function DraftInbox({
           <p className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-500">No hay seguimientos pendientes.</p>
         )}
       </div>
+      <Pagination {...pagination} label="seguimientos"/>
     </Panel>
   );
 }

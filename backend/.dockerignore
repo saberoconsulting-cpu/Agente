@@ -1,4 +1,8 @@
 node_modules
 dist
 .env
+.env.*
+client_secret_*.json
+*.key
+.git
 npm-debug.log

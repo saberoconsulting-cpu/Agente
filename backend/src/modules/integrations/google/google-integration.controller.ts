@@ -56,17 +56,17 @@ export class GoogleIntegrationController {
 
   @Get('picker-config')
   pickerConfig(@TenantId() companyId: string) {
+    const clientId=this.config.get<string>('GOOGLE_CLIENT_ID')?.trim() || null;
+    const developerKey=this.config.get<string>('GOOGLE_PICKER_API_KEY')?.trim() || null;
+    const appId=this.config.get<string>('GOOGLE_APP_ID')?.trim() || null;
+    const clientProject=clientId?.match(/^(\d+)-/)?.[1];
     return {
       company_id: companyId,
-      client_id: this.config.get<string>('GOOGLE_CLIENT_ID') || null,
-      developer_key: this.config.get<string>('GOOGLE_PICKER_API_KEY') || null,
-      app_id: this.config.get<string>('GOOGLE_APP_ID') || null,
+      client_id: clientId,
+      developer_key: developerKey,
+      app_id: appId,
       scopes: this.tokens.getScopes(),
-      enabled: Boolean(
-        this.config.get<string>('GOOGLE_CLIENT_ID') &&
-        this.config.get<string>('GOOGLE_PICKER_API_KEY') &&
-        this.config.get<string>('GOOGLE_APP_ID'),
-      ),
+      enabled: Boolean(clientId && developerKey && appId && clientProject===appId),
     };
   }
 

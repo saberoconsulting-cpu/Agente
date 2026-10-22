@@ -42,6 +42,7 @@ export type AgentSettings = {
     llm_provider: string;
     llm_model: string;
     system_rules: string;
+    scheduling_enabled?: boolean;
   };
   services: Array<{ id: string; name: string; description: string; active: boolean }>;
   policies: Array<{ id: string; policy_key: string; policy_text: string; active: boolean }>;

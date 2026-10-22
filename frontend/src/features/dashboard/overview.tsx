@@ -1,63 +1,67 @@
 'use client';
 
-import { CalendarClock, FileText, MessageCircle, Users } from 'lucide-react';
-import { formatMoney } from '@/lib/format';
-import type { DashboardSummary, OpportunityFollowupDraft } from '@/lib/types';
-import { Breakdown } from '@/components/breakdown';
-import { DraftInbox } from '@/components/draft-inbox';
-import { Panel, StatusPill } from '@/components/ui';
+import {useCallback,useEffect,useRef,useState} from 'react';
+import {ArrowUpRight,BookOpen,CalendarClock,Check,CheckCircle2,ChevronRight,Compass,FileText,Inbox,MessageCircle,RefreshCw,Settings2,Sparkles,Target,Users} from 'lucide-react';
+import {PaginatedItems} from '@/components/list-controls';
+import {apiRequest,SessionUser} from '@/lib/api';
+import type {AgentSettings,DashboardSummary,Opportunity,OpportunityFollowupDraft} from '@/lib/types';
+import type {WhatsAppConnection} from '@/lib/integrations';
+import {formatMoney} from '@/lib/format';
 
-export function Overview({ summary, log, drafts, canOperate, reload }: { summary: DashboardSummary | null; log: string[]; drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void> }) {
-  const metrics = [
-    ['Leads', summary?.metrics.leads ?? 0, Users],
-    ['Conversaciones', summary?.metrics.conversations ?? 0, MessageCircle],
-    ['Documentos RAG', summary?.metrics.indexed_documents ?? 0, FileText],
-    ['Reuniones', summary?.metrics.upcoming_meetings ?? 0, CalendarClock],
-  ] as const;
-  return (
-    <>
-      <div className="grid gap-4 md:grid-cols-4">
-        {metrics.map(([label, value, Icon]) => (
-          <Panel key={label} className="relative overflow-hidden">
-            <div className="absolute right-0 top-0 h-24 w-24 rounded-bl-[44px] bg-sabero-electric/10" />
-            <Icon className="h-6 w-6 text-sabero-electric" />
-            <p className="mt-5 text-sm font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-            <strong className="mt-2 block text-4xl font-black text-sabero-navy">{value}</strong>
-          </Panel>
-        ))}
-      </div>
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <Panel className="bg-sabero-navy text-white">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-cyan">Motor comercial</p>
-          <h2 className="mt-3 text-4xl font-black tracking-[-0.04em]">Vendedor IA hiperadaptativo para cualquier negocio.</h2>
-          <p className="mt-5 max-w-3xl text-blue-100">
-            Hoy opera en beta para SABERO Consulting: califica prospectos de software, arquitectura cloud y automatizaciones IA; mañana cada empresa conecta su Drive, WhatsApp y reglas comerciales.
-          </p>
-          <div className="mt-7 grid gap-3 md:grid-cols-3">
-            {['Argumenta beneficios', 'Maneja objeciones', 'Agenda reuniones'].map((item) => (
-              <div key={item} className="rounded-2xl border border-white/10 bg-white/8 p-4 font-bold">{item}</div>
-            ))}
-          </div>
-        </Panel>
-        <Panel>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Registro ejecutivo</p>
-          <div className="mt-4 grid gap-3">
-            {(log.length ? log : ['Panel listo para operar.', 'Google Picker y Docker habilitados.']).map((item) => (
-              <div key={item} className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-600">{item}</div>
-            ))}
-          </div>
-        </Panel>
-      </div>
-      <Panel>
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Rendimiento comercial</p><h2 className="mt-2 text-2xl font-black text-sabero-navy">Mes actual</h2></div><StatusPill active={Boolean(summary?.sales?.pending_drafts)} label={`${summary?.sales?.pending_drafts || 0} por aprobar`} /></div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-3 xl:grid-cols-6">{[['Creadas', summary?.sales?.created || 0], ['Calificadas', summary?.sales?.qualified || 0], ['Reuniones', summary?.sales?.meetings || 0], ['Propuestas', summary?.sales?.proposals || 0], ['Ganadas', summary?.sales?.won || 0], ['Perdidas', summary?.sales?.lost || 0]].map(([label, value]) => <div key={String(label)} className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase text-slate-500">{label}</p><strong className="mt-2 block text-2xl text-sabero-navy">{value}</strong></div>)}</div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2"><div className="rounded-2xl border border-blue-100 bg-blue-50 p-4"><p className="text-xs font-black uppercase text-slate-500">Valor en pipeline</p><strong className="mt-2 block text-2xl text-sabero-navy">{formatMoney(summary?.sales?.pipeline_value || 0)}</strong></div><div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4"><p className="text-xs font-black uppercase text-slate-500">Valor ganado</p><strong className="mt-2 block text-2xl text-emerald-700">{formatMoney(summary?.sales?.won_value || 0)}</strong></div></div>
-        <div className="mt-5 flex flex-wrap gap-3">{[['Calificación', summary?.sales?.conversion.qualified || 0], ['Reunión', summary?.sales?.conversion.meetings || 0], ['Propuesta', summary?.sales?.conversion.proposals || 0], ['Cierre', summary?.sales?.conversion.won || 0]].map(([label, value]) => <StatusPill key={String(label)} active={Number(value) > 0} label={`${label} ${value}%`} />)}</div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2"><Breakdown title="Por responsable" rows={summary?.sales?.by_assignee || []} /><Breakdown title="Por servicio" rows={summary?.sales?.by_service || []} /></div>
-      </Panel>
-      <DraftInbox drafts={drafts} canOperate={canOperate} reload={reload} />
-    </>
-  );
+type Destination='links'|'knowledge'|'agent'|'contacts'|'opportunities'|'analytics';
+const eventLabels:Record<string,string>={'ai.completion':'El agente atendió una consulta','opportunity.created':'Nueva oportunidad comercial','opportunity.stage_changed':'Oportunidad actualizada','meeting.created':'Reunión registrada','whatsapp.message_received':'Mensaje recibido por WhatsApp'};
+const actionStyle='inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 text-sm font-medium text-slate-700 transition hover:border-teal-700 hover:text-teal-800 disabled:opacity-50';
+
+export function Overview({summary,settings,user,opportunities,log,drafts,reload,navigate}:{summary:DashboardSummary|null;settings:AgentSettings|null;user:SessionUser|null;opportunities:Opportunity[];log:string[];drafts:OpportunityFollowupDraft[];canOperate:boolean;reload:()=>Promise<void>;navigate:(view:Destination)=>void}){
+  const [now,setNow]=useState<Date|null>(null),[guide,setGuide]=useState(true),[tab,setTab]=useState('activity');
+  const [companyName,setCompanyName]=useState(''),[whatsapp,setWhatsapp]=useState<boolean|null>(null),[refreshing,setRefreshing]=useState(false),[refreshError,setRefreshError]=useState('');
+  const inFlight=useRef(false);
+  const companyId=user?.company_id||summary?.company_id||'';
+  const scheduling=Boolean(settings?.settings.scheduling_enabled);
+  useEffect(()=>{setNow(new Date());const timer=window.setInterval(()=>setNow(new Date()),60000);return()=>window.clearInterval(timer);},[]);
+  useEffect(()=>{
+    let cancelled=false;setWhatsapp(null);setCompanyName('');
+    try{setGuide(localStorage.getItem(`sabero:guide:${companyId}`)!=='hidden');}catch{}
+    void apiRequest<{name?:string}>('/platform/company').then(company=>{if(!cancelled)setCompanyName(company.name||'');}).catch(()=>{});
+    if(user?.role==='owner')void apiRequest<WhatsAppConnection[]>('/whatsapp/connections').then(items=>{if(!cancelled)setWhatsapp(items.some(item=>item.status==='connected'));}).catch(()=>{});
+    return()=>{cancelled=true;};
+  },[companyId,user?.role]);
+  const refresh=useCallback(async()=>{
+    if(inFlight.current)return;inFlight.current=true;setRefreshing(true);
+    try{await reload();setRefreshError('');}catch{setRefreshError('No se pudo actualizar. Vuelve a intentarlo.');}finally{inFlight.current=false;setRefreshing(false);}
+  },[reload]);
+  useEffect(()=>{const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},15000);return()=>window.clearInterval(timer);},[refresh]);
+  function toggleGuide(){setGuide(value=>{try{localStorage.setItem(`sabero:guide:${companyId}`,value?'hidden':'visible');}catch{}return !value;});}
+  const steps=[
+    {id:'agent',title:'Dale personalidad a tu agente',description:'Cuéntale qué vendes, cómo atiendes y qué hace especial a tu negocio.',action:'Configurar agente',destination:'agent' as Destination,done:Boolean(settings?.settings.system_rules?.trim()),optional:false,Icon:Sparkles},
+    {id:'whatsapp',title:'Conecta tu canal de ventas',description:'Vincula el WhatsApp de tu empresa para empezar a conversar con tus clientes.',action:whatsapp?'Ver conexión':'Conectar WhatsApp',destination:'links' as Destination,done:whatsapp===true,optional:false,Icon:MessageCircle},
+    {id:'knowledge',title:'Comparte lo que tu agente debe saber',description:'Añade tu catálogo, servicios o documentos desde Google Drive.',action:'Añadir documentos',destination:'knowledge' as Destination,done:Boolean(summary?.metrics.indexed_documents),optional:true,Icon:BookOpen},
+    ...(scheduling?[{id:'google',title:'Prepara tu agenda',description:'Conecta Google para que tu agente consulte disponibilidad y proponga citas.',action:summary?.integrations.google_connected?'Ver conexión':'Conectar Google',destination:'links' as Destination,done:Boolean(summary?.integrations.google_connected),optional:false,Icon:CalendarClock}]:[]),
+  ];
+  const required=steps.filter(step=>!step.optional),completed=required.filter(step=>step.done).length;
+  const hot=summary?.opportunities?.hot||0;
+  const headline=hot?`Hay ${hot===1?'una oportunidad lista':`${hot} oportunidades listas`} para dar el siguiente paso.`:drafts.length?`Tienes ${drafts.length===1?'un seguimiento por revisar':`${drafts.length} seguimientos por revisar`}.`:summary?.metrics.conversations?'Tu agente conversa. Tu negocio sigue creciendo.':'Prepara tu agente para tu próxima venta.';
+  const greeting=!now?'Hola':now.getHours()<12?'Buenos días':now.getHours()<19?'Buenas tardes':'Buenas noches';
+  const tabs=[['activity','Actividad'],['opportunities','Negocios'],['metrics','Métricas'],...(scheduling?[['agenda','Agenda']]:[]),['followups','Seguimientos']];
+  const empty=(title:string,description:string)=><div className="py-10"><div className="relative mb-7 flex h-28 w-32 items-center justify-center"><span className="absolute left-1 top-2 h-20 w-20 rounded-full border border-slate-200"/><FileText className="relative h-24 w-24 text-slate-300" strokeWidth={0.8}/><span className="absolute bottom-2 right-0 rounded-full bg-white p-2"><Inbox className="h-7 w-7 text-slate-300" strokeWidth={1}/></span></div><h3 className="text-xl font-medium leading-8 text-slate-700">{title}</h3><p className="mt-3 text-sm leading-7 text-slate-500">{description}</p></div>;
+  return <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm lg:min-h-[calc(100vh-5rem)]">
+    <div className="grid min-w-0 2xl:grid-cols-[minmax(0,1.75fr)_minmax(340px,1fr)] lg:grid-cols-[minmax(0,1.5fr)_minmax(300px,1fr)]">
+      <section className="min-w-0 px-6 py-7 sm:px-8 sm:py-9 xl:px-10"><div className="flex flex-wrap items-center justify-between gap-4"><p className="text-base font-medium text-slate-700">{greeting}{companyName?`, equipo de ${companyName}`:''}</p><div className="flex items-center gap-2"><button type="button" aria-pressed={guide} onClick={toggleGuide} className="inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm text-slate-600 hover:bg-slate-50"><Compass className="h-4 w-4"/>Guía de inicio</button><button type="button" aria-label="Actualizar inicio" disabled={refreshing} onClick={()=>void refresh()} className="grid h-10 w-10 place-items-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-100"><RefreshCw className={`h-4 w-4 ${refreshing?'animate-spin':''}`}/></button><button type="button" aria-label="Configurar mi agente" onClick={()=>navigate('agent')} className="grid h-10 w-10 place-items-center rounded-full text-slate-500 hover:bg-slate-50"><Settings2 className="h-4 w-4"/></button></div></div>
+        <h2 className="mb-9 mt-8 max-w-3xl font-serif text-[2.4rem] font-normal leading-[1.12] tracking-[-0.035em] text-[#283b42] sm:text-5xl xl:mb-11 xl:text-[3.4rem]">{headline}</h2>
+        {refreshError&&<p role="alert" className="mb-4 text-sm text-amber-700">{refreshError}</p>}
+        {guide?<div><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Tu puesta en marcha</p><span className="text-xs text-slate-400">{completed} de {required.length} pasos esenciales</span></div><div className="grid gap-4">{steps.map(step=><div key={step.id} className={`rounded-[20px] border p-5 sm:p-6 ${step.done?'border-emerald-200 bg-emerald-50/20':'border-blue-200 bg-[#f5fafc]'}`}><div className="flex flex-col gap-5 xl:flex-row xl:items-center"><div className="flex min-w-0 flex-1 gap-3"><span className="mt-0.5 shrink-0">{step.done?<CheckCircle2 className="h-5 w-5 text-emerald-600" strokeWidth={1.5}/>:<step.Icon className="h-5 w-5 text-slate-600" strokeWidth={1.5}/>}</span><div><h3 className="font-semibold text-slate-700">{step.title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{step.description}</p><p className={`mt-2 text-xs ${step.done?'text-emerald-700':'text-slate-400'}`}>{step.done?'Completado':step.optional?'Opcional':'Por completar'}</p></div></div><button type="button" onClick={()=>navigate(step.destination)} className={`${actionStyle} self-start xl:self-center ${step.id==='whatsapp'&&!step.done?'border-teal-800 bg-teal-800 text-white hover:bg-teal-900 hover:text-white':''}`}>{step.action}<ArrowUpRight className="h-4 w-4"/></button></div></div>)}</div>{!scheduling&&<p className="mt-4 text-xs leading-6 text-slate-400">¿Tu negocio trabaja con citas? Puedes activar la agenda en la configuración del agente.</p>}</div>:<div className="grid gap-4 sm:grid-cols-2">{[{title:'Tus contactos',description:'Conoce a las personas que conversan con tu agente.',view:'contacts' as Destination,Icon:Users},{title:'Tus oportunidades',description:'Da seguimiento a cada venta, en un solo lugar.',view:'opportunities' as Destination,Icon:Target}].map(item=><button key={item.view} type="button" onClick={()=>navigate(item.view)} className="rounded-[20px] border border-slate-200 p-6 text-left transition hover:border-teal-400 hover:bg-teal-50/30"><item.Icon className="mb-5 h-6 w-6 text-teal-800" strokeWidth={1.5}/><h3 className="font-semibold text-slate-700">{item.title}</h3><p className="mt-2 text-sm leading-6 text-slate-500">{item.description}</p><ChevronRight className="mt-5 h-4 w-4 text-slate-400"/></button>)}</div>}
+        <div className="mt-9 flex flex-wrap gap-x-8 gap-y-4 border-t border-slate-100 pt-6">{[['Contactos',summary?.metrics.leads],['Conversaciones',summary?.metrics.conversations],['Ventas abiertas',summary?.opportunities?.open]].map(([label,value])=><div key={String(label)}><strong className="text-xl font-medium tabular-nums text-slate-700">{value??'—'}</strong><p className="mt-1 text-xs text-slate-400">{label}</p></div>)}</div>
+      </section>
+      <aside aria-label="Resumen de tu empresa" className="min-w-0 border-t border-slate-200 px-6 py-7 sm:px-8 lg:border-l lg:border-t-0 lg:px-6 xl:py-9"><h2 className="text-base font-semibold text-slate-700">Tu día de un vistazo</h2><p className="mt-2 text-sm leading-6 text-slate-500">{now?now.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'long',year:'numeric'}):'Cargando tu día…'}</p><div role="tablist" aria-label="Resumen del día" className="mt-7 flex gap-5 overflow-x-auto border-b border-slate-200">{tabs.map(([id,label])=><button type="button" role="tab" id={`day-tab-${id}`} aria-selected={tab===id} aria-controls="day-panel" key={id} onClick={()=>setTab(id)} className={`shrink-0 border-b-2 pb-3 text-sm transition ${tab===id?'border-teal-800 font-medium text-teal-900':'border-transparent text-slate-400 hover:text-slate-600'}`}>{label}</button>)}</div>
+        <div id="day-panel" role="tabpanel" aria-labelledby={`day-tab-${tab}`} className="min-h-80 py-2">
+          {!summary?<p className="py-12 text-sm text-slate-400">Cargando tu actividad…</p>:tab==='activity'?summary.recent_events.length?<div className="mt-4"><p className="mb-2 text-xs text-slate-400">Últimos movimientos registrados</p><PaginatedItems items={summary.recent_events} label="actividad de la empresa">{event=><div className="flex gap-3 border-b border-slate-100 py-4"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-teal-600"/><div><p className="text-sm leading-6 text-slate-700">{eventLabels[event.event_type]||'Actividad del agente'}</p><time className="mt-1 block text-xs text-slate-400">{new Date(event.created_at).toLocaleString('es')}</time></div></div>}</PaginatedItems></div>:empty('Tu próxima conversación empieza aquí','Cuando tu agente atienda clientes, aquí verás sus últimos movimientos.')
+          :tab==='opportunities'?opportunities.length?<><PaginatedItems items={opportunities} label="negocios de la empresa">{item=><button type="button" onClick={()=>navigate('opportunities')} className="flex w-full items-center justify-between gap-3 border-b border-slate-100 py-4 text-left"><div><p className="text-sm font-medium text-slate-700">{item.lead_name||item.whatsapp_number}</p><p className="mt-1 text-xs text-slate-400">{item.service_interest||'Oportunidad comercial'}</p></div><ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400"/></button>}</PaginatedItems></>:empty('Un espacio para tus próximas ventas','Las oportunidades detectadas por tu agente aparecerán aquí.')
+          :tab==='metrics'?<div className="grid gap-0 py-5">{[['Contactos registrados',summary.metrics.leads],['Conversaciones registradas',summary.metrics.conversations],['Ventas abiertas',summary.opportunities?.open||0],['Ventas ganadas este mes',summary.sales?.won||0],['Valor ganado este mes',formatMoney(summary.sales?.won_value||0)]].map(([label,value])=><div key={String(label)} className="flex items-center justify-between gap-4 border-b border-slate-100 py-4"><p className="text-sm text-slate-500">{label}</p><strong className="text-base font-medium tabular-nums text-slate-700">{value}</strong></div>)}<button type="button" onClick={()=>navigate('analytics')} className="mt-6 inline-flex items-center gap-2 text-sm font-medium text-teal-800">Ver resultados<ArrowUpRight className="h-4 w-4"/></button></div>
+          :tab==='agenda'?<div className="py-7"><CalendarClock className="mb-5 h-10 w-10 text-slate-300" strokeWidth={1}/><h3 className="text-xl font-medium text-slate-700">{summary.metrics.upcoming_meetings?`${summary.metrics.upcoming_meetings} reuniones próximas`:'Tu agenda, sin pendientes'}</h3><p className="mt-3 text-sm leading-7 text-slate-500">{summary.integrations.google_connected?'Consulta los horarios y detalles en tu calendario de Google.':'Conecta Google para que tu agente pueda consultar disponibilidad.'}</p><button type="button" className={`${actionStyle} mt-6`} onClick={()=>summary.integrations.google_connected?window.open('https://calendar.google.com/calendar/u/0/r','_blank','noopener,noreferrer'):navigate('links')}>{summary.integrations.google_connected?'Abrir calendario':'Conectar Google'}<ArrowUpRight className="h-4 w-4"/></button></div>
+          :drafts.length?<PaginatedItems items={drafts} label="seguimientos de la empresa">{draft=><div className="border-b border-slate-100 py-4"><p className="text-sm font-medium text-slate-700">{draft.lead_name||draft.whatsapp_number}</p><p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">{draft.message}</p><button type="button" onClick={()=>navigate('opportunities')} className="mt-3 text-xs font-medium text-teal-800">Revisar seguimiento →</button></div>}</PaginatedItems>:empty('Todo al día','Los seguimientos que necesiten tu revisión aparecerán aquí.')}
+        </div>
+        {log.length>0&&<p role="status" className="mt-6 rounded-xl bg-slate-50 p-3 text-xs leading-6 text-slate-500">{log[0]}</p>}
+      </aside>
+    </div>
+  </div>;
 }
-
-

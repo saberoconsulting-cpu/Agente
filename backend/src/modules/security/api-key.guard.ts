@@ -4,15 +4,17 @@ import { Request } from 'express';
 import { AuthService } from '../auth/auth.service';
 import { IS_PUBLIC_ROUTE } from './public.decorator';
 import { ROLES_KEY, UserRole } from './roles.decorator';
+import { PlatformService } from '../platform/platform.service';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly auth: AuthService,
+    private readonly platform: PlatformService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_ROUTE, [
       context.getHandler(),
       context.getClass(),
@@ -25,6 +27,9 @@ export class ApiKeyGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('Authentication is required');
 
     const payload = this.auth.verifyAccessToken(token);
+    await this.auth.meForPayload(payload);
+    this.platform.assertCompany(payload.company_id);
+    if (this.platform.managed) await this.platform.company();
     (request as Request & { user?: unknown }).user = payload;
     // Controllers created before tenant context existed still receive company_id from
     // query/body. Override it centrally so client input can never select another tenant.

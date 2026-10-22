@@ -11,12 +11,17 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
   const [whatsappConnections, setWhatsappConnections] = useState<WhatsAppConnection[]>([]);
   const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState('Pendiente de configuracion');
+  const [crmEnabled, setCrmEnabled] = useState(false);
+  const [googleConsent,setGoogleConsent] = useState(false);
   const pendingCodeRef = useRef<string | null>(null);
   const pendingAssetsRef = useRef<WhatsAppSignupAssets>({});
   const completingRef = useRef(false);
 
   useEffect(() => {
-    void loadWhatsAppState();
+    void loadWhatsAppState().catch(error => setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo consultar WhatsApp.'));
+    void apiRequest<{ products: string[] }>('/platform/company')
+      .then(company => setCrmEnabled(company.products.includes('crm')))
+      .catch(() => setCrmEnabled(false));
   }, []);
 
   const completeWhatsAppSignup = useCallback(async () => {
@@ -79,7 +84,7 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
     ['WhatsApp Cloud API', 'Webhook, respuestas y seguimiento comercial.', Boolean(whatsappConnections.length), MessageCircle],
     ['Google Drive', 'Fuente de conocimiento empresarial con Picker.', true, Cloud],
     ['Google Calendar', 'Agenda reuniones sin conflictos de horario.', true, CalendarClock],
-    ['CRM API', 'Integracion opcional sin duplicar logica del agente.', false, Zap],
+    ['CRM inmobiliario', 'Contactos e historial compartidos cuando el producto esta habilitado.', crmEnabled, Zap],
   ] as const;
 
   async function loadWhatsAppState() {
@@ -147,7 +152,10 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
             <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Vinculaciones</p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.03em] text-sabero-navy">Canales del agente</h2>
           </div>
-          <Button onClick={() => { pushLog('Estado de vinculaciones actualizado.'); reload(); }}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button>
+          <Button onClick={() => {
+            void loadWhatsAppState().then(() => { pushLog('Estado de vinculaciones actualizado.'); reload(); })
+              .catch(error => setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo actualizar WhatsApp.'));
+          }}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button>
         </div>
       </Panel>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -165,11 +173,12 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
         ))}
       </div>
       <Panel>
+        <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-slate-700"><h3 className="font-bold text-sabero-navy">Antes de conectar Google</h3><p>Drive permite usar los archivos que selecciones como conocimiento del agente. Sus fragmentos relevantes pueden enviarse a DeepSeek para redactar respuestas para tus clientes. Calendar permite consultar disponibilidad y crear reuniones confirmadas. La conexión es opcional.</p><p className="mt-2">Selecciona solo información autorizada para ese uso. Puedes revocar los permisos desde tu cuenta de Google; las copias ya indexadas se eliminan por separado. <a className="font-semibold text-sabero-electric underline" href="/privacy" target="_blank" rel="noopener noreferrer">Ver política de privacidad</a>.</p><label className="mt-3 flex items-start gap-3"><input className="mt-1" type="checkbox" checked={googleConsent} onChange={event=>setGoogleConsent(event.target.checked)}/><span>He leído y autorizo el uso descrito de los datos de Google para las funciones que active.</span></label></div>
         <div className="flex flex-wrap gap-3">
           <Button onClick={connectWhatsApp} disabled={whatsappBusy || !whatsappConfig?.enabled}>
             <MessageCircle className="mr-2 h-4 w-4" />{whatsappBusy ? 'Conectando...' : 'Conectar WhatsApp'}
           </Button>
-          <Button onClick={() => { window.location.href = `/api/v1/integrations/google/start?company_id=${companyId}`; }}>
+          <Button disabled={!googleConsent} onClick={() => { window.location.href = `/api/v1/integrations/google/start?company_id=${companyId}`; }}>
             <Cloud className="mr-2 h-4 w-4" />Reconectar Google
           </Button>
           <Button

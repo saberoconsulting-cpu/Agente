@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
+import type { ConversationMessagePage } from './conversation-message.types';
 
 @Controller('conversations')
 export class ConversationsController {
@@ -20,5 +21,10 @@ export class ConversationsController {
     @Query('limit') limit = '100',
   ) {
     return this.conversations.messages(companyId, id, Number(limit));
+  }
+
+  @Get(':id/messages/page')
+  messagePage(@Param('id') id: string, @Query('company_id') companyId: string, @Query('limit') limit = '100', @Query('cursor') cursor?: string): Promise<ConversationMessagePage> {
+    return this.conversations.messagePage(companyId, id, Number(limit), cursor);
   }
 }

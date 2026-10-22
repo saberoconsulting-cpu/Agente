@@ -7,6 +7,8 @@ import { AuditService } from '../audit/audit.service';
 import { EventsService } from '../events/events.service';
 import { SalesAgentService } from '../sales-agent/sales-agent.service';
 import { WhatsappConnectionsService } from './whatsapp-connections.service';
+import { MessageStore } from '../platform/message-store.service';
+import { PlatformService } from '../platform/platform.service';
 
 type WhatsappMessage = {
   id: string;
@@ -26,6 +28,8 @@ export class WhatsappService {
     private readonly events: EventsService,
     private readonly audit: AuditService,
     private readonly connections: WhatsappConnectionsService,
+    private readonly messages: MessageStore,
+    private readonly platform: PlatformService,
   ) {}
 
   verifyWebhook(mode: string, verifyToken: string, challenge: string) {
@@ -41,6 +45,7 @@ export class WhatsappService {
 
   async receiveWebhook(body: unknown, rawBody?: Buffer, signature?: string) {
     this.validateSignature(rawBody, signature);
+    if (this.platform?.managed) await this.platform.company();
 
     const eventId = await this.saveInboundEvent(body);
     const messages = this.extractMessages(body);
@@ -72,7 +77,7 @@ export class WhatsappService {
     if (!inboundText) {
       await this.sendText(
         message.from,
-        'Hola, soy el asistente virtual de SABERO Consulting. Por ahora puedo ayudarte mejor si me envias tu consulta en texto.',
+        `Hola, soy el asistente virtual de ${this.config.get<string>('COMPANY_NAME') || 'la empresa'}. Por ahora puedo ayudarte mejor si me envias tu consulta en texto.`,
         companyId,
       );
       return;
@@ -93,6 +98,7 @@ export class WhatsappService {
       message: inboundText,
       conversationId: saved.conversationId,
       leadId: saved.leadId,
+      inboundMessageId: message.id,
     });
 
     await this.sendText(message.from, response.answer, companyId);
@@ -123,13 +129,7 @@ export class WhatsappService {
   }
 
   private async saveInboundEvent(payload: unknown): Promise<string> {
-    const result = await this.db.query<{ id: string }>(
-      `insert into inbound_webhook_events (provider, payload)
-       values ($1, $2)
-       returning id`,
-      ['meta_whatsapp', JSON.stringify(payload)],
-    );
-    return result.rows[0].id;
+    return this.messages.inboundEvent(payload);
   }
 
   private extractMessages(payload: unknown): WhatsappMessage[] {
@@ -167,6 +167,7 @@ export class WhatsappService {
   ): Promise<{ inserted: boolean; conversationId: string; leadId: string }> {
     const text = message.text?.body || null;
     const companyId = await this.resolveCompanyId(message.phoneNumberId);
+    this.platform?.assertCompany(companyId);
 
     const leadResult = await this.db.query<{ id: string }>(
       `insert into leads (company_id, whatsapp_number)
@@ -188,25 +189,12 @@ export class WhatsappService {
       [companyId, message.from, leadResult.rows[0].id],
     );
 
-    const insertResult = await this.db.query<{ id: string }>(
-      `insert into messages (
-         company_id, conversation_id, provider_message_id, direction, message_type, text_body, raw_payload, inbound_event_id
-       )
-       values ($1, $2, $3, 'inbound', $4, $5, $6, $7)
-       on conflict (provider_message_id) do nothing
-       returning id`,
-      [
-        companyId,
-        conversation.rows[0].id,
-        message.id,
-        message.type || 'unknown',
-        text,
-        JSON.stringify(message),
-        eventId,
-      ],
-    );
+    await this.platform.contact(companyId, leadResult.rows[0].id, message.from);
+    const insertResult = await this.messages.save({ companyId, conversationId: conversation.rows[0].id,
+      providerMessageId: message.id, direction: 'inbound', messageType: message.type || 'unknown',
+      textBody: text, rawPayload: message, inboundEventId: eventId });
 
-    if (insertResult.rowCount) {
+    if (insertResult.inserted) {
       await this.events.record({
         companyId,
         eventType: 'message.received',
@@ -221,13 +209,16 @@ export class WhatsappService {
     }
 
     return {
-      inserted: Boolean(insertResult.rowCount),
+      inserted: insertResult.inserted,
       conversationId: conversation.rows[0].id,
       leadId: leadResult.rows[0].id,
     };
   }
 
   private async sendText(to: string, text: string, companyId?: string) {
+    const outboundCompanyId = companyId || this.config.get<string>('COMPANY_ID') || 'sabero';
+    this.platform?.assertCompany(outboundCompanyId);
+    if (this.platform?.managed) await this.platform.company();
     const credentials = await this.resolveSendCredentials(companyId);
     const token = credentials.token;
     const phoneNumberId = credentials.phoneNumberId;
@@ -255,9 +246,13 @@ export class WhatsappService {
     );
 
     const providerMessageId = response.data?.messages?.[0]?.id || null;
-    const outboundCompanyId = companyId || this.config.get<string>('COMPANY_ID') || 'sabero';
-
-    await this.db.query(
+    {
+      const result = await this.db.query<{ id: string }>(`insert into conversations(company_id,channel,external_id)
+        values($1,'whatsapp',$2) on conflict(company_id,channel,external_id) do update set updated_at=now() returning id`, [outboundCompanyId, to]);
+      await this.messages.save({ companyId: outboundCompanyId, conversationId: result.rows[0].id,
+        providerMessageId, direction: 'outbound', messageType: 'text', textBody: text, rawPayload: response.data });
+    }
+    if (!this.messages.mongo) await this.db.query(
       `insert into outbound_messages (company_id, recipient, text_body, provider_message_id, raw_response)
        values ($1, $2, $3, $4, $5)`,
       [outboundCompanyId, to, text, providerMessageId, JSON.stringify(response.data)],
@@ -296,8 +291,13 @@ export class WhatsappService {
   private async resolveCompanyId(phoneNumberId?: string) {
     if (phoneNumberId) {
       const connection = await this.connections.findActiveByPhoneNumberId(phoneNumberId);
-      if (connection) return connection.company_id;
+      if (connection) {
+        this.platform?.assertCompany(connection.company_id);
+        return connection.company_id;
+      }
     }
+
+    if (this.platform?.managed) throw new ForbiddenException('Unknown WhatsApp phone number for this company');
 
     return this.config.get<string>('COMPANY_ID') || 'sabero';
   }
@@ -315,6 +315,7 @@ export class WhatsappService {
 
     return {
       token: this.config.get<string>('META_ACCESS_TOKEN')
+        || this.config.get<string>('WHATSAPP_ACCESS_TOKEN')
         || this.config.get<string>('WHATSAPP_TOKEN'),
       phoneNumberId: this.config.get<string>('META_PHONE_NUMBER_ID')
         || this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID'),

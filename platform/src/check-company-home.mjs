@@ -1,0 +1,35 @@
+import {chromium} from '../generated/browser/node_modules/playwright/index.mjs';
+import {readFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url),{parse}=require('../../backend/node_modules/dotenv');
+const env=parse(await readFile(new URL('../../backend/.env',import.meta.url)));
+if(!['localhost','127.0.0.1'].includes(new URL(env.DATABASE_URL).hostname))throw new Error('Local database required');
+const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+try{
+  const context=await browser.newContext({viewport:{width:1625,height:1050}});
+  const login=await context.request.post('http://127.0.0.1:5173/api/v1/auth/login',{data:{email:env.ADMIN_EMAIL,password:env.ADMIN_PASSWORD}});if(!login.ok())throw new Error('Local login failed');
+  const page=await context.newPage();await page.goto('http://127.0.0.1:5173');
+  await page.getByRole('heading',{name:'Pulso de la plataforma',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Inicio',exact:true}).click();
+  await page.getByRole('heading',{name:'Tu día de un vistazo',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Configurar agente',exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Métricas',exact:true}).click();
+  await page.getByRole('tabpanel').getByText('Contactos registrados',{exact:true}).waitFor();
+  await page.getByRole('tab',{name:'Negocios',exact:true}).click();
+  await page.getByRole('tab',{name:'Seguimientos',exact:true}).click();
+  await page.getByRole('tab',{name:'Actividad',exact:true}).click();
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Desktop home overflow');
+  await page.screenshot({path:new URL('../generated/local/empresa-inicio-desktop.png',import.meta.url).pathname.slice(1),fullPage:true});
+  await page.getByRole('button',{name:'Configurar agente',exact:true}).click();
+  await page.getByRole('heading',{name:'¿Tu negocio necesita citas?',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Inicio',exact:true}).click();
+  await page.getByRole('button',{name:'Guía de inicio',exact:true}).click();
+  if(await page.getByRole('button',{name:'Configurar agente',exact:true}).count())throw new Error('Guide did not collapse');
+  await page.reload();await page.getByRole('heading',{name:'Pulso de la plataforma',exact:true}).waitFor();await page.getByRole('button',{name:'Inicio',exact:true}).click();
+  if(await page.getByRole('button',{name:'Configurar agente',exact:true}).count())throw new Error('Company guide preference did not persist');
+  await page.getByRole('button',{name:'Guía de inicio',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw new Error('Mobile home overflow');
+  await page.screenshot({path:new URL('../generated/local/empresa-inicio-mobile.png',import.meta.url).pathname.slice(1),fullPage:true});
+  console.log('Company home OK: onboarding guide, functional navigation, activity tabs, per-company guide preference and mobile layout. No external messages sent or business data changed.');
+}finally{await browser.close();}

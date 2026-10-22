@@ -86,7 +86,7 @@ export class GoogleDriveService {
       `select id, google_file_id, name, mime_type, web_view_link, version,
               modified_time, trashed, sync_status, last_synced_at, created_at, updated_at
        from google_drive_files
-       where company_id = $1
+       where company_id = $1 and trashed = false
        order by updated_at desc`,
       [companyId],
     );

@@ -17,6 +17,8 @@ export class DatabaseService implements OnModuleDestroy {
     const sslEnabled = this.config.get<string>('DATABASE_SSL') !== 'false';
     this.pool = new Pool({
       connectionString,
+      ...(this.config.get<string>('DATABASE_SCHEMA') === 'agent' ? { options: '-c search_path=agent,public' } : {}),
+      max: Number(this.config.get<string>('DATABASE_POOL_MAX') || 5),
       ssl: sslEnabled ? { rejectUnauthorized: isProduction, ...(ca ? { ca } : {}) } : false,
     });
   }

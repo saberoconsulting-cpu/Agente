@@ -4,6 +4,7 @@ export type AiMessage = {
 };
 
 export type AiCompletionInput = {
+  companyId?: string;
   messages: AiMessage[];
   temperature?: number;
   maxTokens?: number;

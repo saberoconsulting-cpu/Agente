@@ -1,8 +1,12 @@
+import { fileURLToPath } from 'node:url';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingRoot: fileURLToPath(new URL('.', import.meta.url)),
   output: 'standalone',
   distDir: process.env.NODE_ENV === 'development' ? '.next-dev' : '.next',
   poweredByHeader: false,
+  experimental: { cpus: 1 },
   images: {
     unoptimized: true,
   },

@@ -1,5 +1,6 @@
 'use client';
 
+import { DeleteRecordButton, Pagination, usePagination } from '@/components/list-controls';
 import { useEffect, useState } from 'react';
 import { Bot, Plus, Trash2 } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
@@ -7,10 +8,23 @@ import type { AgentSettings } from '@/lib/types';
 import { Button, Panel, StatusPill } from '@/components/ui';
 
 export function AgentConfig({ companyId, settings, reload, pushLog }: { companyId: string; settings: AgentSettings | null; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
-  const [brief, setBrief] = useState('Somos SABERO Consulting. Vendemos software a medida, arquitectura cloud y automatizaciones con IA para empresas que quieren vender mas, operar mejor y escalar.');
+  const [brief, setBrief] = useState(companyId === 'sabero' ? 'Somos SABERO Consulting. Vendemos software a medida, arquitectura cloud y automatizaciones con IA para empresas que quieren vender mas, operar mejor y escalar.' : '');
   const [rules, setRules] = useState(settings?.settings.system_rules || '');
   const [manualServiceName, setManualServiceName] = useState('');
   const [manualServiceDescription, setManualServiceDescription] = useState('');
+  const [scheduling, setScheduling] = useState(false);
+  const [savingScheduling, setSavingScheduling] = useState(false);
+  useEffect(() => { setScheduling(Boolean(settings?.settings.scheduling_enabled)); }, [settings?.settings.scheduling_enabled]);
+
+  async function saveScheduling() {
+    setSavingScheduling(true);
+    try {
+      await apiRequest('/agent-settings', { method: 'PATCH', body: JSON.stringify({ scheduling_enabled: scheduling }) });
+      await reload(companyId);
+      pushLog(scheduling ? 'Agenda activada para esta empresa.' : 'Agenda desactivada: el agente atenderá sin proponer citas.');
+    } catch { pushLog('No se pudo guardar la agenda. Vuelve a intentarlo.'); }
+    finally { setSavingScheduling(false); }
+  }
 
   useEffect(() => {
     setRules(settings?.settings.system_rules || '');
@@ -25,12 +39,12 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
 
     const generatedRules = [
       `Contexto del negocio: ${cleanBrief}`,
-      'Actua como vendedor consultivo senior: diagnostica necesidad, explica beneficios de negocio y orienta hacia una reunion.',
+      'Vende con mensajes cortos: una idea y una pregunta por turno. Explica solo lo que el cliente necesite.',
       'Para cada servicio, explica la necesidad que resuelve, el cliente ideal, entregables posibles, valor economico y oportunidad comercial.',
       'Distingue claramente entre capacidades anunciadas y experiencia, certificaciones o resultados que todavia deban confirmarse.',
       'No inventes precios, garantias, casos de exito ni condiciones que no esten en la base de conocimiento o politicas comerciales.',
-      'Si el prospecto muestra interes real, solicita nombre, empresa, correo y propone agendar una reunion.',
-      'Si falta informacion, responde con honestidad y ofrece que un asesor de SABERO lo confirme.',
+      scheduling ? 'Si ayuda al cliente, ofrece una reunion. Pide los datos de uno en uno.' : 'Ayuda a elegir el producto y avanzar hacia la compra sin proponer reuniones.',
+      'Si falta informacion, responde con honestidad y ofrece que el equipo de esta empresa lo confirme.',
     ].join('\n');
 
     await apiRequest('/agent-settings', {
@@ -104,8 +118,10 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
     pushLog(`Servicio agregado manualmente: ${name}.`);
     await reload(companyId);
   }
+  const pagination=usePagination(settings?.services || []);
   return (
     <div className="grid gap-6">
+      <Panel><h2 className="text-xl font-bold text-sabero-navy">¿Tu negocio necesita citas?</h2><p className="mt-2 text-sm text-slate-500">Opcional. Para vender productos puedes atender sin Calendar. Al activar la agenda, conecta Google antes de ofrecer horarios.</p><label className="my-5 flex items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={scheduling} onChange={event => setScheduling(event.target.checked)} className="h-5 w-5" />Permitir reuniones y citas</label><Button onClick={() => void saveScheduling()} disabled={!settings || savingScheduling}>{savingScheduling ? 'Guardando…' : 'Guardar agenda'}</Button></Panel>
       <Panel>
         <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Configurar con IA</p>
         <h2 className="mt-2 text-3xl font-black text-sabero-navy">Describe tu negocio y preparamos el vendedor</h2>
@@ -159,13 +175,11 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
           <Button onClick={addManualService}><Plus className="mr-2 h-4 w-4" />Agregar</Button>
         </div>
         <div className="mt-5 grid gap-3">
-          {settings?.services.length ? settings.services.map((service) => (
+          {settings?.services.length ? pagination.items.map((service) => (
             <div key={service.id} className="rounded-2xl border border-slate-200 p-4">
               <div className="flex items-center justify-between gap-4">
                 <p className="font-black text-sabero-navy">{service.name}</p>
-                <Button variant="ghost" onClick={() => void deleteService(service.id, service.name)}>
-                  <Trash2 className="mr-2 h-4 w-4" />Eliminar
-                </Button>
+                <DeleteRecordButton resource="services" id={service.id} name={service.name} reload={()=>reload(companyId)}/>
               </div>
               <p className="mt-2 text-sm text-slate-600">{service.description}</p>
             </div>
@@ -175,6 +189,7 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
             </div>
           )}
         </div>
+        <Pagination {...pagination} label="servicios"/>
       </Panel>
     </div>
   );
