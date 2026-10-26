@@ -34,10 +34,22 @@ export async function listMessages(db, query, conversationIds) {
     filter.$or = [{ createdAt: { $lt: date } }, { createdAt: date, id: { $lt: cursor.id } }];
   }
   const limit = pageLimit(query.limit);
-  const rows = await db.collection('messages').find(filter, { projection: { _id: 0, rawPayload: 0 } })
+  const rows = await db.collection('messages').find(filter, { projection: { _id: 0 } })
     .sort({ createdAt: -1, id: -1 }).limit(limit + 1).toArray();
   const hasMore = rows.length > limit;
   const items = rows.slice(0, limit);
   const last = items.at(-1);
-  return { items: items.reverse(), nextCursor: hasMore ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, id: last.id })).toString('base64url') : null };
+  return { items: items.reverse().map(presentMessage), nextCursor: hasMore ? Buffer.from(JSON.stringify({ createdAt: last.createdAt, id: last.id })).toString('base64url') : null };
+}
+
+export function presentMessage(row){
+  const {rawPayload,...safe}=row;
+  if(!safe.presentation){
+    safe.presentation={sender:row.direction==='inbound'?'contact':'ai'};
+    const original=rawPayload?.provider||rawPayload;
+    for(const kind of ['document','image','audio','video'])if(original?.[kind]?.id){
+      safe.presentation.attachment={id:original[kind].id,kind,filename:original[kind].filename,mime_type:original[kind].mime_type};break;
+    }
+  }
+  return safe;
 }

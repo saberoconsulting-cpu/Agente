@@ -7,6 +7,7 @@ import { RetrievalService } from '../retrieval/retrieval.service';
 import type { MessageStore } from '../platform/message-store.service';
 import { SalesSchedulingService } from './sales-scheduling.service';
 import { whatsappReply } from './whatsapp-reply';
+import { SalesPipelineService } from '../sales-pipeline/sales-pipeline.service';
 
 type RespondInput = {
   companyId: string;
@@ -25,16 +26,21 @@ export class SalesAgentService {
     private readonly events: EventsService,
     @Optional() @Inject('AGENT_MESSAGE_STORE') private readonly messageStore?: MessageStore,
     @Optional() private readonly scheduling?: SalesSchedulingService,
+    @Optional() private readonly pipeline?: SalesPipelineService,
   ) {}
 
   async respondToMessage(input: RespondInput) {
+    await this.pipeline?.ensure(input).catch(() => console.warn('Opportunity creation pending'));
     const agentSettings = await this.getSettings(input.companyId);
     const email = this.extractQualificationSignals(input.message).email;
     if (email && input.leadId) await this.updateLeadQualification(input.companyId, input.leadId, { email });
-    const bookingAnswer = agentSettings.scheduling_enabled ? await this.scheduling?.respond(input).catch(() =>
+    const bookingAnswer = (agentSettings.pipeline_mode !== 'products' && (agentSettings.scheduling_enabled || input.companyId.toLowerCase() === 'sabero')) ? await this.scheduling?.respond(input).catch(() =>
       'No pude consultar la agenda en este momento. No hay ninguna reserva nueva confirmada. ¿Lo intentamos de nuevo?',
     ) : null;
-    if (bookingAnswer) return { company_id: input.companyId, provider: 'calendar', model: 'booking-flow', answer: bookingAnswer, references: [], qualification: {} };
+    if (bookingAnswer) {
+      void this.pipeline?.sync(input);
+      return { company_id: input.companyId, provider: 'calendar', model: 'booking-flow', answer: bookingAnswer, references: [], qualification: {} };
+    }
     const qualification = this.extractQualificationSignals(input.message);
     if (input.leadId) {
       await this.updateLeadQualification(input.companyId, input.leadId, qualification);
@@ -90,6 +96,7 @@ export class SalesAgentService {
     ];
 
     const completion = await this.deepSeek.complete({ companyId: input.companyId, messages, maxTokens: 160 });
+    void this.pipeline?.sync(input);
 
     return {
       company_id: input.companyId,
@@ -189,8 +196,10 @@ export class SalesAgentService {
       language: string;
       system_rules: string;
       scheduling_enabled: boolean;
+      pipeline_mode?: string;
     }>(
       `select agent_name, tone, language, system_rules,
+         coalesce((select policy_text from negotiation_policies where company_id=$1 and policy_key='sales_pipeline_mode' and active=true),'services') as pipeline_mode,
          exists(select 1 from negotiation_policies where company_id=$1 and policy_key='scheduling_enabled' and active=true and policy_text='true') as scheduling_enabled
        from company_agent_settings
        where company_id = $1`,
@@ -228,7 +237,7 @@ export class SalesAgentService {
 
   private buildSystemPrompt(input: {
     companyId: string;
-    settings: { agent_name: string; tone: string; language: string; system_rules: string; scheduling_enabled?: boolean };
+    settings: { agent_name: string; tone: string; language: string; system_rules: string; scheduling_enabled?: boolean; pipeline_mode?: string };
     policies: { policy_key: string; policy_text: string }[];
     services: { name: string; description: string }[];
     context: { title: string; content: string; source_id: string; id: string }[];
@@ -273,8 +282,9 @@ export class SalesAgentService {
       'No simules ser una persona humana. Identificate como asistente virtual cuando corresponda.',
       'No afirmes haber consultado disponibilidad, reservado ni enviado invitaciones: esas acciones solo las confirma el flujo real de agenda. Si el cliente propone otra hora, hay que comprobarla antes de aceptarla.',
       'WhatsApp: responde en 10 a 35 palabras, maximo 55. Una idea y una sola pregunta. Como maximo dos opciones. No expliques todo el proceso ni repitas el saludo. Evita listas largas. Amplia solo el punto que el cliente pregunte.',
-      input.settings.scheduling_enabled
-        ? 'Las reuniones son opcionales: ofrece una cita solo cuando ayude al cliente o la solicite. No conviertas cada respuesta en una invitacion.'
+      'Precios de proyectos a medida: explica con naturalidad que primero necesitas revisar las funcionalidades y los factores del proyecto para dar un precio responsable. No inventes importes ni aproximados. Evita frases como no doy precios cerrados sin alcance validado. Ejemplo: Para darte un precio, primero necesito conocer las funcionalidades. ¿Qué te gustaría que haga el sistema? No repitas esta explicación si ya la diste; avanza según lo que diga el cliente y ofrece una reunión con un asesor cuando sea útil.',
+      (input.settings.pipeline_mode !== 'products' && (input.settings.scheduling_enabled || input.companyId.toLowerCase() === 'sabero'))
+        ? 'Las reuniones son opcionales. Si acepta una, pregunta de forma natural: Genial, ¿te viene bien por la mañana o por la tarde? Luego: ¿te viene bien mañana o qué otro día tienes disponible? Pide solo los datos que falten, una pregunta por turno. Si ya dio fecha y hora, no vuelvas a preguntar la franja o el día. Recoge nombre y correo. El flujo de agenda consulta Calendar y reserva si está disponible; si no, guarda la solicitud y un asesor de Sabero Consulting confirmará la reunión y el envío del enlace por correo y WhatsApp. Solo afirma reservas o envíos confirmados por el flujo real. No menciones APIs ni configuración técnica.'
         : 'Esta empresa no ofrece agenda desde el agente. No propongas reuniones, llamadas, citas ni pidas conectar Calendar. Ayuda a elegir el producto o servicio y explica el siguiente paso de compra autorizado. Si solicitan cita, indica que el equipo debe coordinarla. No inventes stock, cobros, pedidos ni envios confirmados.',
     ].join('\n');
   }

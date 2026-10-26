@@ -27,7 +27,7 @@ export type DashboardSummary = {
   }>;
 };
 
-export type Opportunity = { id: string; lead_name: string; whatsapp_number: string; stage: string; score: number; assignee_email?: string; service_interest?: string; next_action?: string; last_activity_at: string; };
+export type Opportunity = { id: string; lead_id?: string; conversation_id?: string; assignee_id?: string; lead_name: string; whatsapp_number: string; stage: string; score: number; assignee_email?: string; service_interest?: string; next_action?: string; last_activity_at: string; score_signals?: { manual_stage?: boolean; suggested_stage?: string; classification_reason?: string; classified_at?: string }; };
 
 export type OpportunityFollowupDraft = {
   id: string; opportunity_id: string; rule_key: string; priority: string; message: string; template_name?: string;

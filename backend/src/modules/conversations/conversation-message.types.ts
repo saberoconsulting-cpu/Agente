@@ -1,4 +1,5 @@
 import type { StoredMessage } from '../platform/message-store.service';
+import type { MessagePresentation } from '../platform/message-store.service';
 
 export interface ConversationMessage {
   id: string;
@@ -10,6 +11,7 @@ export interface ConversationMessage {
   text_body?: string | null;
   created_at?: Date | string;
   inbound_event_id?: string | null;
+  presentation?: MessagePresentation;
 }
 
 export interface ConversationMessagePage {
@@ -27,6 +29,7 @@ export function toConversationMessage(message: StoredMessage): ConversationMessa
     message_type: message.messageType,
     text_body: message.textBody,
     created_at: message.createdAt,
+    ...(message.presentation ? { presentation: message.presentation } : {}),
     ...(message.inboundEventId === undefined ? {} : { inbound_event_id: message.inboundEventId }),
   };
 }

@@ -11,6 +11,7 @@ export type CalendarAvailabilityInput = {
   timeMin: string;
   timeMax: string;
   timezone?: string;
+  calendarId?: string;
 };
 
 export type CreateCalendarMeetingInput = {
@@ -23,6 +24,8 @@ export type CreateCalendarMeetingInput = {
   timezone?: string;
   attendeeEmail?: string;
   attendeeName?: string;
+  createMeet?: boolean;
+  requestId?: string;
 };
 
 @Injectable()
@@ -68,7 +71,7 @@ export class GoogleCalendarService {
 
   async getAvailability(input: CalendarAvailabilityInput) {
     const calendar = await this.calendarClient(input.companyId);
-    const calendarId = this.calendarId();
+    const calendarId = input.calendarId || this.calendarId();
 
     const response = await calendar.freebusy.query({
       requestBody: {
@@ -95,26 +98,52 @@ export class GoogleCalendarService {
     const calendarId = input.calendarId || this.calendarId();
     const timezone = input.timezone || this.config.get<string>('DEFAULT_TIMEZONE') || 'America/Lima';
 
-    const response = await calendar.events.insert({
+    let response;
+    try { response = await calendar.events.insert({
       calendarId,
+      ...(input.createMeet ? {conferenceDataVersion:1}:{}),
       requestBody: {
+        ...(input.createMeet && input.requestId ? {id:createHash('sha256').update(`${input.companyId}:${input.requestId}`).digest('hex')} : {}),
         summary: input.title,
         description: input.description,
         start: { dateTime: input.startTime, timeZone: timezone },
         end: { dateTime: input.endTime, timeZone: timezone },
+        ...(input.createMeet?{conferenceData:{createRequest:{requestId:input.requestId||randomBytes(16).toString('hex'),conferenceSolutionKey:{type:'hangoutsMeet'}}}}:{}),
         attendees: input.attendeeEmail
           ? [{ email: input.attendeeEmail, displayName: input.attendeeName }]
           : undefined,
       },
       sendUpdates: input.attendeeEmail ? 'all' : 'none',
-    });
+    }); } catch(error){
+      if(input.createMeet&&input.requestId&&(error as {response?:{status?:number}}).response?.status===409){
+        response=await calendar.events.get({calendarId,eventId:createHash('sha256').update(`${input.companyId}:${input.requestId}`).digest('hex')});
+      }else throw error;
+    }
 
     return {
       calendar_id: calendarId,
       event_id: response.data.id,
       html_link: response.data.htmlLink,
+      meet_link: response.data.hangoutLink || response.data.conferenceData?.entryPoints?.find(entry=>entry.entryPointType==='video')?.uri || null,
       raw: response.data,
     };
+  }
+
+  async listCalendars(companyId:string){
+    const calendar=await this.calendarClient(companyId);
+    try {
+      const response=await calendar.calendarList.list({minAccessRole:'writer',maxResults:100});
+      return (response.data.items||[]).filter(item=>!!item.id).map(item=>({id:item.id!,label:item.summary||item.id!,primary:item.primary===true}));
+    } catch(error){
+      if((error as {response?:{status?:number}}).response?.status===403)return [{id:this.calendarId(),label:'Calendario conectado',primary:true}];
+      throw error;
+    }
+  }
+
+  async meetingLink(companyId:string,calendarId:string,eventId:string){
+    const calendar=await this.calendarClient(companyId);
+    const response=await calendar.events.get({calendarId,eventId});
+    return {raw:response.data,meet_link:response.data.hangoutLink||response.data.conferenceData?.entryPoints?.find(entry=>entry.entryPointType==='video')?.uri||null};
   }
 
   private async calendarClient(companyId: string) {

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { Registry } from './registry.mjs';
 import { upsertContact } from './contacts.mjs';
-import { initializeMessages, listMessages, saveMessage } from './messages.mjs';
+import { initializeMessages, listMessages, saveMessage, presentMessage } from './messages.mjs';
 import { pageLimit } from './domain.mjs';
 import { adminAuthorized, companyOverview } from './overview.mjs';
 import { listRequests, reviewRequest, submitRequest } from './access-requests.mjs';
@@ -101,6 +101,12 @@ export function createHandler(registry, mongo) {
         return send(200, await saveMessage(db, body));
       }
       if (url.pathname === '/v1/messages' && req.method === 'GET') return send(200, await listMessages(db, Object.fromEntries(url.searchParams)));
+      if(url.pathname==='/v1/message-attachment'&&req.method==='GET'){
+        const conversationId=url.searchParams.get('conversationId');const messageId=url.searchParams.get('messageId');
+        if(!/^[a-f0-9-]{36}$/i.test(messageId||'')||!/^[a-f0-9-]{36}$/i.test(conversationId||''))return send(400,{error:'Invalid identity'});
+        const message=await db.collection('messages').findOne({conversationId,id:messageId});
+        return send(200,{attachment:message?presentMessage(message).presentation?.attachment||null:null});
+      }
       if (url.pathname === '/v1/contact-messages' && req.method === 'GET') {
         const contactId = url.searchParams.get('contactId');
         if (!/^[a-f0-9-]{36}$/i.test(contactId || '')) return send(400, { error: 'Invalid contact ID' });
@@ -115,7 +121,7 @@ export function createHandler(registry, mongo) {
         if (body.direction && !['inbound', 'outbound'].includes(body.direction)) throw new Error('Invalid direction');
         if (!Array.isArray(body.conversationIds) || body.conversationIds.length > 200 || body.conversationIds.some(v => typeof v !== 'string')) throw new Error('Invalid conversations');
         const match = { conversationId: { $in: body.conversationIds }, ...(body.direction ? { direction: body.direction } : {}) };
-        const items = await db.collection('messages').aggregate([{ $match: match }, { $group: { _id: '$conversationId', count: { $sum: 1 }, lastMessageAt: { $max: '$createdAt' } } }]).toArray();
+        const items = await db.collection('messages').aggregate([{ $match: match }, { $sort: {createdAt:1,id:1} }, { $group: { _id: '$conversationId', count: { $sum: 1 }, lastMessageAt: { $max: '$createdAt' },firstMessageAt:{$min:'$createdAt'},preview:{$last:'$textBody'},lastDirection:{$last:'$direction'},lastInboundAt:{$max:{$cond:[{$eq:['$direction','inbound']},'$createdAt',null]}} } }]).toArray();
         return send(200, { items });
       }
       if (url.pathname === '/v1/inbound-events' && req.method === 'POST' && company.product === 'agent') {

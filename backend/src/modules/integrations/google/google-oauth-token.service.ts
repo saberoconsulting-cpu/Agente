@@ -9,6 +9,7 @@ import { GoogleOAuthRepository } from './repositories/google-oauth.repository';
 const googleScopes = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/calendar.freebusy',
+  'https://www.googleapis.com/auth/calendar.calendarlist.readonly',
   'https://www.googleapis.com/auth/drive.file',
 ];
 

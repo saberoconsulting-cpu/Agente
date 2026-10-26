@@ -1,9 +1,9 @@
 import { SalesAgentService } from './sales-agent.service';
 
 describe('SalesAgentService conversation context', () => {
-  function setup(schedulingEnabled = false) {
+  function setup(schedulingEnabled = false, pipelineMode = 'services') {
     const db = { query: jest.fn().mockImplementation(async (sql: string, _params?: unknown[]) => {
-      if (sql.includes('from company_agent_settings')) return { rowCount: 1, rows: [{ agent_name: 'SABERO', language: 'es', tone: 'consultivo', system_rules: '', scheduling_enabled: schedulingEnabled }] };
+      if (sql.includes('from company_agent_settings')) return { rowCount: 1, rows: [{ agent_name: 'SABERO', language: 'es', tone: 'consultivo', system_rules: '', scheduling_enabled: schedulingEnabled, pipeline_mode: pipelineMode }] };
       if (sql.includes('select state')) return { rows: [{ state: {} }] };
       return { rows: [], rowCount: 0 };
     }) };
@@ -35,6 +35,27 @@ describe('SalesAgentService conversation context', () => {
     await service.respondToMessage({ companyId: 'sabero', message: 'Hola' });
     expect(store.list).not.toHaveBeenCalled();
     expect(ai.complete.mock.calls[0][0].messages.slice(1)).toEqual([{ role: 'user', content: 'Hola' }]);
+  });
+
+  it('uses the product sales process even when meeting settings were previously enabled', async () => {
+    const { db, ai, store } = setup(true, 'products');
+    const scheduling = { respond: jest.fn() };
+    const service = new SalesAgentService(db as any, ai as any, { searchTextByCompany: jest.fn().mockResolvedValue([]) } as any, {} as any, store as any, scheduling as any);
+    await service.respondToMessage({ companyId: 'sabero', message: 'Quiero comprar un producto' });
+    expect(scheduling.respond).not.toHaveBeenCalled();
+    expect(ai.complete.mock.calls[0][0].messages[0].content).toContain('Esta empresa no ofrece agenda');
+  });
+
+  it('creates a card and updates classification for messages handled by the booking flow', async () => {
+    const { db, ai, store } = setup(true);
+    const scheduling = { respond: jest.fn().mockResolvedValue('¿Qué día te viene bien?') };
+    const pipeline = { ensure: jest.fn().mockResolvedValue(undefined), sync: jest.fn().mockResolvedValue(undefined) };
+    const service = new SalesAgentService(db as any, ai as any, {} as any, {} as any, store as any, scheduling as any, pipeline as any);
+    const input = { companyId: 'sabero', conversationId: 'chat', leadId: 'lead', message: 'Quiero una reunión' };
+    await service.respondToMessage(input);
+    expect(pipeline.ensure).toHaveBeenCalledWith(input);
+    expect(pipeline.sync).toHaveBeenCalledWith(input);
+    expect(ai.complete).not.toHaveBeenCalled();
   });
 
   it('does not invoke scheduling for a business without appointments', async () => {

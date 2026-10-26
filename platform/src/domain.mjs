@@ -52,5 +52,13 @@ export function messageInput(body) {
   if (!Number.isFinite(createdAt.getTime())) throw new Error('Invalid message date');
   return { id: body.id, conversationId: body.conversationId, providerMessageId: body.providerMessageId || undefined,
     direction: body.direction, messageType: body.messageType, textBody: body.textBody ?? null,
-    rawPayload: body.rawPayload ?? null, inboundEventId: body.inboundEventId ?? null, createdAt };
+    rawPayload: body.rawPayload ?? null, inboundEventId: body.inboundEventId ?? null, createdAt,
+    ...(body.presentation && ['ai','human','contact','system'].includes(body.presentation.sender) ? {presentation: {
+      sender:body.presentation.sender,
+      ...(typeof body.presentation.sender_name==='string'?{sender_name:body.presentation.sender_name.slice(0,150)}:{}),
+      ...(body.presentation.attachment && typeof body.presentation.attachment.id==='string' ? {attachment:{
+        id:body.presentation.attachment.id.slice(0,300),kind:String(body.presentation.attachment.kind||'document').slice(0,20),
+        filename:String(body.presentation.attachment.filename||'Archivo').slice(0,200),mime_type:String(body.presentation.attachment.mime_type||'application/octet-stream').slice(0,100)
+      }}:{})
+    }}:{}) };
 }

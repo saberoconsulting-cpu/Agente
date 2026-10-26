@@ -8,6 +8,31 @@ datasource db {
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
+model ContactOutboundRequest {
+  id String @id @db.Uuid
+  companyId String @map("company_id")
+  leadId String @map("lead_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  status String @default("pending")
+  providerMessageId String? @map("provider_message_id")
+  payloadHash String @map("payload_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@unique([companyId,id])
+  @@map("contact_outbound_requests")
+}
+
+model ContactMedia {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId String @map("company_id")
+  leadId String @map("lead_id") @db.Uuid
+  providerMediaId String @map("provider_media_id")
+  filename String
+  mimeType String @map("mime_type")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  @@index([companyId,leadId],map:"contact_media_owner_idx")
+  @@map("contact_media")
+}
+
 model Company {
   id String @id
   name String

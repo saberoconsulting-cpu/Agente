@@ -18,6 +18,8 @@ export type CreateMeetingInput = {
   lead_id?: string;
   conversation_id?: string;
   idempotency_key?: string;
+  calendar_id?: string;
+  create_meet?: boolean;
 };
 
 @Injectable()
@@ -65,11 +67,19 @@ export class CalendarService {
   async createMeeting(input: CreateMeetingInput) {
     const companyId = input.company_id || 'sabero';
     const timezone = input.timezone || this.config.get<string>('DEFAULT_TIMEZONE') || 'America/Lima';
-    const calendarId = this.config.get<string>('GOOGLE_CALENDAR_ID');
+    const calendarId = input.calendar_id || this.config.get<string>('GOOGLE_CALENDAR_ID');
 
     if (!calendarId) throw new BadRequestException('GOOGLE_CALENDAR_ID is required');
     if (!input.title || !input.start_time || !input.end_time) {
       throw new BadRequestException('title, start_time and end_time are required');
+    }
+    if(input.lead_id){
+      const lead=await this.db.query('select id from leads where company_id=$1 and id=$2',[companyId,input.lead_id]);
+      if(!lead.rowCount)throw new BadRequestException('Contacto no disponible para esta empresa.');
+    }
+    if(input.conversation_id){
+      const conversation=await this.db.query('select id from conversations where company_id=$1 and id=$2 and ($3::uuid is null or lead_id=$3::uuid)',[companyId,input.conversation_id,input.lead_id||null]);
+      if(!conversation.rowCount)throw new BadRequestException('Conversación no disponible para esta empresa.');
     }
 
     if (input.idempotency_key) {
@@ -87,6 +97,7 @@ export class CalendarService {
       timeMin: input.start_time,
       timeMax: input.end_time,
       timezone,
+      calendarId,
     });
 
     if (availability.busy.length) {
@@ -103,6 +114,8 @@ export class CalendarService {
       timezone,
       attendeeEmail: input.attendee_email,
       attendeeName: input.attendee_name,
+      createMeet:input.create_meet,
+      requestId:input.idempotency_key,
     });
 
     const result = await this.db.query<{ id: string }>(
@@ -136,12 +149,14 @@ export class CalendarService {
     const meeting = {
       ...result.rows[0],
       html_link: event.html_link,
+      meet_link: event.meet_link,
     };
 
     if (input.lead_id) {
       await this.db.query(
         `update opportunities set stage = 'reunion_agendada', last_activity_at = now(), updated_at = now()
-         where company_id = $1 and lead_id = $2 and stage in ('nuevo', 'calificado', 'reunion_propuesta')`,
+         where company_id = $1 and lead_id = $2 and stage in ('nuevo', 'calificado', 'reunion_propuesta')
+           and coalesce((score_signals->>'manual_stage')::boolean,false)=false`,
         [companyId, input.lead_id],
       );
     }

@@ -106,4 +106,22 @@ describe('WhatsappService connection resolution', () => {
     ] } }] }] });
     expect(process).not.toHaveBeenCalled();
   });
+
+  it('leaves the autonomous agent silent only for an explicitly taken conversation',async()=>{
+    const {service}=createService();
+    const agent={respondToMessage:jest.fn()};(service as any).salesAgent=agent;
+    (service as any).control={get:jest.fn().mockResolvedValue({mode:'human',assignee_id:'advisor'})};
+    const send=jest.spyOn(service as any,'sendText').mockResolvedValue(undefined);
+    await (service as any).processInboundMessage({id:'inbound',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
+    expect(agent.respondToMessage).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+  });
+  it('checks ownership again before sending an AI response that was already being generated',async()=>{
+    const {service}=createService();
+    const agent={respondToMessage:jest.fn().mockResolvedValue({answer:'Respuesta original del agente'})};(service as any).salesAgent=agent;
+    const finalCheck=jest.fn().mockResolvedValue(undefined);
+    (service as any).control={get:jest.fn().mockResolvedValue({mode:'auto',version:'before-takeover'}),sendIfAutomatic:finalCheck};
+    const send=jest.spyOn(service as any,'sendText').mockResolvedValue(undefined);
+    await (service as any).processInboundMessage({id:'inbound',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
+    expect(finalCheck).toHaveBeenCalledWith('sabero','chat','before-takeover',expect.any(Function));expect(send).not.toHaveBeenCalled();
+  });
 });

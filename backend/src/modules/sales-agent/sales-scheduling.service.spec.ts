@@ -3,15 +3,36 @@ import { SalesSchedulingService } from './sales-scheduling.service';
 describe('SalesSchedulingService', () => {
   const input = { companyId: 'sabero', conversationId: 'conversation', leadId: 'lead', message: 'Quiero una reunión' };
   const slot = { start: '2026-10-22T14:00:00.000Z', end: '2026-10-22T14:30:00.000Z', label: '' };
-  function setup(state: any = {}, decision: any = { action: 'availability' }) {
+  function setup(state: any = {}, decision: any = { action: 'availability' }, calendarEnabled = true) {
     const db = { query: jest.fn().mockImplementation(async (sql: string, _params?: unknown[]) => sql.startsWith('select') ? { rows: [{ state: { booking: state }, external_id: '51900000000' }] } : { rows: [] }) };
     const ai = { complete: jest.fn().mockResolvedValue({ content: JSON.stringify(decision) }) };
     const calendar = { getAvailability: jest.fn().mockResolvedValue({ busy: [] }), createMeeting: jest.fn().mockResolvedValue({ id: 'meeting' }) };
-    const config = { get: jest.fn((key: string) => key === 'DEFAULT_TIMEZONE' ? 'America/Lima' : undefined) };
+    if (!calendarEnabled) calendar.getAvailability.mockRejectedValue(new Error('Calendar not active'));
+    const config = { get: jest.fn((key: string) => key === 'DEFAULT_TIMEZONE' ? 'America/Lima' : key === 'SALES_CALENDAR_BOOKING_ENABLED' && calendarEnabled ? 'true' : undefined) };
     return { service: new SalesSchedulingService(db as any, ai as any, calendar as any, config as any), db, ai, calendar };
   }
   beforeEach(() => { jest.useFakeTimers().setSystemTime(new Date('2026-10-21T20:00:00Z')); });
   afterEach(() => { jest.useRealTimers(); });
+
+  it('collects manual meeting preferences across turns without calling Calendar', async () => {
+    let state: any = {};
+    const steps = [
+      [{ action: 'availability' }, 'por la mañana o por la tarde'],
+      [{ action: 'availability', period: 'afternoon' }, 'otro día'],
+      [{ action: 'availability', date: '2026-10-22' }, 'nombre'],
+      [{ action: 'select', name: 'Ana' }, 'correo'],
+      [{ action: 'select', email: 'ana@example.com' }, 'hora'],
+      [{ action: 'select', time: '15:00' }, 'Un asesor de Sabero Consulting'],
+    ] as const;
+    for (const [decision, expected] of steps) {
+      const { service, db, calendar } = setup(state, decision, false);
+      expect(await service.respond(input)).toContain(expected);
+      expect(calendar.createMeeting).not.toHaveBeenCalled();
+      const update = db.query.mock.calls.find(([sql]) => sql.startsWith('update conversations'))!;
+      state = JSON.parse(update[1]![2] as string);
+    }
+    expect(state).toMatchObject({ status: 'pending_advisor', active: false, name: 'Ana', email: 'ana@example.com', date: '2026-10-22', requestedTime: '15:00' });
+  });
 
   it('leaves ordinary sales questions to the sales agent', async () => {
     const { service, ai } = setup();
@@ -44,7 +65,7 @@ describe('SalesSchedulingService', () => {
   it('does not treat calendar errors as availability', async () => {
     const { service, calendar } = setup({}, { action: 'availability', date: '2026-10-22', period: 'morning' });
     calendar.getAvailability.mockRejectedValue(new Error('invalid_grant'));
-    expect(await service.respond(input)).toContain('No puedo consultar');
+    expect(await service.respond(input)).toContain('nombre');
     expect(calendar.createMeeting).not.toHaveBeenCalled();
   });
   it('requires explicit confirmation before creating a meeting', async () => {

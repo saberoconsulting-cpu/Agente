@@ -5,9 +5,10 @@ import { WhatsappConnectionsController } from './whatsapp-connections.controller
 import { WhatsappConnectionsService } from './whatsapp-connections.service';
 import { WhatsappService } from './whatsapp.service';
 import { SalesAgentModule } from '../sales-agent/sales-agent.module';
+import { ConversationControlModule } from '../conversations/conversation-control.module';
 
 @Module({
-  imports: [SalesAgentModule],
+  imports: [SalesAgentModule, ConversationControlModule],
   controllers: [WhatsappController, WhatsappConnectionsController],
   providers: [WhatsappService, WhatsappConnectionsService, OAuthTokenCryptoService],
   exports: [WhatsappService, WhatsappConnectionsService],

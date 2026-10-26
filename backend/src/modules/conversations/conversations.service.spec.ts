@@ -13,7 +13,8 @@ describe('Conversation message response contract', () => {
       text_body: 'Hola', created_at: new Date(date) }] }) };
     const store = new MessageStore(platform as any, db as any);
     const service = new ConversationsService({} as any, store);
-    const page = await service.messagePage('company', 'conversation', 25, 'cursor');
+    const cursor=Buffer.from(JSON.stringify({createdAt:date,id:'00000000-0000-0000-0000-000000000001'})).toString('base64url');
+    const page = await service.messagePage('company', 'conversation', 25, cursor);
     expect(JSON.parse(JSON.stringify(page))).toEqual({ items: [{ id: 'message', company_id: 'company',
       conversation_id: 'conversation', provider_message_id: 'provider', direction: 'inbound', message_type: 'text',
       text_body: 'Hola', created_at: date }], next_cursor: mongo ? 'older' : null });

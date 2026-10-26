@@ -3,10 +3,16 @@ import { CurrentUser, TenantId } from '../security/current-user.decorator';
 import { Roles } from '../security/roles.decorator';
 import { AuthTokenPayload } from '../auth/token';
 import { OpportunitiesService } from './opportunities.service';
+import { SalesPipelineService } from '../sales-pipeline/sales-pipeline.service';
+import { PipelineMode } from '../sales-pipeline/pipeline';
 
 @Controller('opportunities')
 export class OpportunitiesController {
-  constructor(private readonly opportunities: OpportunitiesService) {}
+  constructor(private readonly opportunities: OpportunitiesService, private readonly pipeline: SalesPipelineService) {}
+  @Get('pipeline') configuration(@TenantId() companyId: string) { return this.pipeline.configuration(companyId); }
+  @Patch('pipeline') @Roles('owner','admin') configure(@TenantId() companyId: string, @Body() body: { mode: PipelineMode }) { return this.pipeline.configure(companyId, body.mode); }
+  @Post('import-contacts') @Roles('owner','admin') importContacts(@TenantId() companyId: string) { return this.pipeline.importContacts(companyId); }
+  @Patch(':id/automation') @Roles('owner','admin') automation(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Param('id') id: string) { return this.opportunities.resumeAutomation(companyId, id, user.sub); }
   @Get() list(@TenantId() companyId: string, @Query('stage') stage?: string, @Query('assignee_id') assigneeId?: string, @Query('min_score') minScore?: string) { return this.opportunities.list(companyId, { stage, assignee_id: assigneeId, min_score: minScore ? Number(minScore) : undefined }); }
   @Get('followup-drafts') drafts(@TenantId() companyId: string, @Query('status') status?: string) { return this.opportunities.listFollowupDrafts(companyId, status); }
   @Post('followup-drafts/:id/approve') @Roles('owner','admin') approveDraft(@TenantId() companyId: string, @CurrentUser() user: AuthTokenPayload, @Param('id') id: string, @Body() body: { message?: string; template_name?: string }) { return this.opportunities.approveFollowupDraft(companyId, id, user.sub, body); }

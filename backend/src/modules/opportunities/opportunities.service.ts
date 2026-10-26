@@ -5,8 +5,9 @@ import { EventsService } from '../events/events.service';
 import { FollowupsService } from '../followups/followups.service';
 import { QueueService } from '../queue/queue.service';
 import { OpportunitiesRepository } from './repositories/opportunities.repository';
+import { allStages } from '../sales-pipeline/pipeline';
 
-const stages = ['nuevo', 'calificado', 'reunion_propuesta', 'reunion_agendada', 'propuesta', 'ganado', 'perdido'];
+const stages: readonly string[] = allStages;
 const closedStages = ['ganado', 'perdido'];
 
 @Injectable()
@@ -44,6 +45,13 @@ export class OpportunitiesService {
 
   async confirm(companyId: string, id: string, actorId: string) { return this.changeStage(companyId, id, 'calificado', actorId); }
 
+  async resumeAutomation(companyId: string, id: string, actorId: string) {
+    const result = await this.db.query(`update opportunities set score_signals=score_signals || '{"manual_stage":false}'::jsonb,updated_at=now() where id=$1 and company_id=$2 returning *`, [id, companyId]);
+    if (!result.rowCount) throw new NotFoundException('Opportunity not found');
+    await this.activity(companyId, id, actorId, 'opportunity.automation_resumed', 'Clasificación automática activada para los próximos mensajes');
+    return result.rows[0];
+  }
+
   async changeStage(companyId: string, id: string, stage: string, actorId: string, lossReason?: string) {
     if (!stages.includes(stage)) throw new BadRequestException('Invalid opportunity stage');
     const result = await this.repository.updateStage(companyId, id, stage, lossReason);
@@ -63,7 +71,8 @@ export class OpportunitiesService {
 
   async note(companyId: string, id: string, actorId: string, content: string, nextAction?: string) {
     if (!content) throw new BadRequestException('Note content is required');
-    await this.repository.updateNote(companyId, id, nextAction);
+    const updated = await this.repository.updateNote(companyId, id, nextAction);
+    if (!updated.rowCount) throw new NotFoundException('Opportunity not found');
     await this.activity(companyId, id, actorId, 'opportunity.note', content);
     return this.detail(companyId, id);
   }

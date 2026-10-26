@@ -1,10 +1,12 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Pool, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { AsyncLocalStorage } from 'async_hooks';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly pool: Pool;
+  private readonly context = new AsyncLocalStorage<PoolClient>();
 
   constructor(private readonly config: ConfigService) {
     const connectionString = this.config.get<string>('DATABASE_URL');
@@ -27,7 +29,19 @@ export class DatabaseService implements OnModuleDestroy {
     text: string,
     params: unknown[] = [],
   ): Promise<QueryResult<T>> {
-    return this.pool.query<T>(text, params);
+    return (this.context.getStore() || this.pool).query<T>(text, params);
+  }
+
+  async conversationLock<T>(companyId: string, conversationId: string, work: () => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    const key = `${companyId}:${conversationId}`;
+    try {
+      await client.query('select pg_advisory_lock(hashtextextended($1,0))', [key]);
+      return await this.context.run(client, work);
+    } finally {
+      try { await client.query('select pg_advisory_unlock(hashtextextended($1,0))', [key]); }
+      finally { client.release(); }
+    }
   }
 
   async onModuleDestroy() {

@@ -43,6 +43,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   const [log, setLog] = useState<string[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [followupDrafts, setFollowupDrafts] = useState<OpportunityFollowupDraft[]>([]);
+  const [focusedOpportunity, setFocusedOpportunity] = useState<string | null>(null);
   const companyId = user?.company_id || 'sabero';
 
   const pushLog = useCallback((message: string) => {
@@ -212,7 +213,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
           {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
           {view === 'companies' && platformAdmin && <Companies adminCompanyId={companyId} />}
           {view === 'requests' && platformAdmin && <AccessRequests adminCompanyId={companyId} />}
-          {view === 'contacts' && <Contacts />}
+          {view === 'contacts' && <Contacts onOpportunity={id => {setFocusedOpportunity(id);setView('opportunities');}} />}
           {view === 'usage' && <Usage />}
           {view === 'overview' && <Overview summary={summary} settings={settings} user={user} opportunities={opportunities} log={log} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} navigate={setView} />}
           {view === 'analytics' && <Analytics summary={summary} opportunities={opportunities} />}
@@ -220,7 +221,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
           {view === 'agent' && <AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} />}
           {view === 'links' && <Links companyId={companyId} reload={reloadCommercial} pushLog={pushLog} />}
           {view === 'opportunities' && (
-            <Opportunities items={opportunities} users={users} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} />
+            <Opportunities items={opportunities} users={users} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} initialSelectedId={focusedOpportunity} />
           )}
           {view === 'access' && <Access users={users} companyId={companyId} reload={loadUsers} pushLog={pushLog} />}
         </div>
