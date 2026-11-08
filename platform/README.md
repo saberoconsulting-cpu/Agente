@@ -22,6 +22,17 @@ npm run local:restart
 npm run local:down
 ```
 
+Para iniciar solamente el agente y omitir el repositorio del CRM:
+
+```sh
+npm run local:agent
+npm run local:agent:check
+# Agregar datos ficticios persistentes únicamente a la base local:
+npm run local:demo
+# Reiniciar solamente el entorno del agente:
+npm run local:agent:restart
+```
+
 El arranque crea una empresa de desarrollo `sabero` con ambos productos, aplica las migraciones
 completas y crea los administradores locales a partir de `ADMIN_EMAIL`/`ADMIN_PASSWORD` del
 agente. Los accesos de ambos productos son separados y usan esas mismas credenciales locales.

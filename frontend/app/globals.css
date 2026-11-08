@@ -43,3 +43,105 @@ select {
   isolation: isolate;
   background: #f4f8f7;
 }
+
+.chart-panel {
+  border-color: #dfe7ec;
+  box-shadow: 0 12px 32px rgba(22, 50, 74, 0.055);
+}
+
+.chart-kpi {
+  border-color: #dfe7ec;
+  box-shadow: 0 10px 28px rgba(22, 50, 74, 0.05);
+}
+
+.chart-eyebrow {
+  color: #2f8f89;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.chart-title {
+  margin-top: 0.35rem;
+  color: #16324a;
+  font-size: 1.2rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.chart-description {
+  margin-top: 0.4rem;
+  max-width: 34rem;
+  color: #7c8a9a;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.chart-bar-fill {
+  width: var(--chart-width);
+  background: var(--chart-color);
+  animation: chart-bar-grow 680ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.chart-line-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: chart-line-draw 900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.chart-area-reveal {
+  animation: chart-fade-up 700ms ease-out both;
+}
+
+.chart-point-pop {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: chart-point-pop 360ms ease-out forwards;
+}
+
+.chart-ring-segment {
+  opacity: 0;
+  animation: chart-ring-in 560ms ease-out forwards;
+}
+
+.chart-card-enter {
+  animation: chart-fade-up 500ms ease-out both;
+}
+
+@keyframes chart-bar-grow {
+  from { width: 0; }
+  to { width: var(--chart-width); }
+}
+
+@keyframes chart-line-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes chart-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes chart-point-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes chart-ring-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-bar-fill,
+  .chart-line-draw,
+  .chart-area-reveal,
+  .chart-point-pop,
+  .chart-ring-segment,
+  .chart-card-enter {
+    animation: none;
+    opacity: 1;
+    stroke-dashoffset: 0;
+  }
+}

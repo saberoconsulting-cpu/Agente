@@ -9,10 +9,11 @@ import { Registry, contactSchema, controlSchema } from './registry.mjs';
 import { tenantId, products, encrypt, decrypt, serviceToken, tokenHash } from './domain.mjs';
 import { initializeMessages } from './messages.mjs';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
-const agent = resolve(root, 'AGENT-AI/backend');
-const crm = resolve(root, 'crm_inmobiliario/backend');
-const generated = resolve(root, 'AGENT-AI/platform/generated');
+const repository = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const workspace = resolve(repository, '..');
+const agent = resolve(repository, 'backend');
+const crm = resolve(workspace, 'crm_inmobiliario/backend');
+const generated = resolve(repository, 'platform/generated');
 const quote = value => '"' + value.replaceAll('"', '""') + '"';
 const literal = value => "'" + value.replaceAll("'", "''") + "'";
 

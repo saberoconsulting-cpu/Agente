@@ -9,9 +9,10 @@ import pg from 'pg';
 import { Registry, controlSchema } from './registry.mjs';
 
 const folder = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const workspace = resolve(folder, '../..');
-const agent = resolve(workspace, 'AGENT-AI/backend');
-const agentWeb = resolve(workspace, 'AGENT-AI/frontend');
+const repository = resolve(folder, '..');
+const workspace = resolve(repository, '..');
+const agent = resolve(repository, 'backend');
+const agentWeb = resolve(repository, 'frontend');
 const crm = resolve(workspace, 'crm_inmobiliario/backend');
 const crmWeb = resolve(workspace, 'crm_inmobiliario/frontend');
 const local = resolve(folder, 'generated/local');
@@ -49,7 +50,7 @@ async function command(executable, args, cwd, env = {}, logName = 'setup') {
 }
 const runNode = (args, cwd, env, name) => command(process.execPath, args, cwd, env, name);
 const compose = args => command('docker', ['compose', '--env-file', join(local, 'infrastructure.env'), '-f', join(folder, 'compose.local.yml'), ...args], folder, {}, 'infrastructure');
-async function waitFor(url, name, timeout = 120000) {
+async function waitFor(url, name, timeout = 300000) {
   const end = Date.now() + timeout;
   while (Date.now() < end) {
     try { if ((await fetch(url, { signal: AbortSignal.timeout(3000) })).ok) return; } catch {}
@@ -99,9 +100,11 @@ async function stopProcesses() {
   await writeFile(processesFile, '{}');
 }
 
-async function check() {
+async function check(includeCrm = true) {
   const env = await readEnv(join(agent, '.env'));
-  for (const [name, url] of [['agent-api', 'http://127.0.0.1:3001/api/v1/health'], ['platform', `${urls.platform}/health`], ['agent-web', urls.agent], ['crm-web', `${urls.crm}/login`]]) {
+  const services = [['agent-api', 'http://127.0.0.1:3001/api/v1/health'], ['platform', `${urls.platform}/health`], ['agent-web', urls.agent]];
+  if (includeCrm) services.push(['crm-web', `${urls.crm}/login`]);
+  for (const [name, url] of services) {
     await waitFor(url, name); console.log(`${name}: OK`);
   }
   const login = await fetch(`${urls.agent}/api/v1/auth/login`, { method: 'POST',
@@ -114,24 +117,26 @@ async function check() {
     if (!response.ok) throw new Error(`Agent ${path} failed (${response.status})`);
   }
   console.log('agent-login-and-data: OK');
-  const crmLogin = await fetch(`${urls.crm}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD }) });
-  if (!crmLogin.ok) throw new Error(`CRM login failed (${crmLogin.status})`);
-  const session = await crmLogin.json();
-  const clients = await fetch(`${urls.crm}/api/clients`, { headers: { Authorization: `Bearer ${session.token}` } });
-  if (!clients.ok) throw new Error(`CRM clients failed (${clients.status})`);
-  console.log('crm-login-and-data: OK');
+  if (includeCrm) {
+    const crmLogin = await fetch(`${urls.crm}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD }) });
+    if (!crmLogin.ok) throw new Error(`CRM login failed (${crmLogin.status})`);
+    const session = await crmLogin.json();
+    const clients = await fetch(`${urls.crm}/api/clients`, { headers: { Authorization: `Bearer ${session.token}` } });
+    if (!clients.ok) throw new Error(`CRM clients failed (${clients.status})`);
+    console.log('crm-login-and-data: OK');
+  }
   const central = await fetch(`${urls.platform}/v1/company`, { headers: { Authorization: `Bearer ${env.PLATFORM_SERVICE_TOKEN}`, 'X-Company-Id': env.COMPANY_ID } });
   const company = await central.json();
-  if (!central.ok || !company.products.includes('agent') || !company.products.includes('crm')) throw new Error('Shared company is not active for both products');
-  console.log('shared-company-agent-crm: OK');
+  if (!central.ok || !company.products.includes('agent') || (includeCrm && !company.products.includes('crm'))) throw new Error(`Shared company is not active for ${includeCrm ? 'both products' : 'the agent'}`);
+  console.log(includeCrm ? 'shared-company-agent-crm: OK' : 'shared-company-agent: OK');
   const processes = await json(processesFile, {});
   if (!processes['agent-worker']) throw new Error('Agent worker is not registered');
   try { process.kill(processes['agent-worker'].pid, 0); } catch { throw new Error('Agent worker is not running'); }
   console.log('agent-worker: OK');
 }
 
-async function up() {
+async function up(includeCrm = true) {
   const statePath = join(local, 'secrets.json');
   let secrets = await json(statePath, null);
   if (!secrets) {
@@ -170,10 +175,10 @@ async function up() {
     const exists = await registry.control.query("SELECT status FROM platform_companies WHERE id='sabero'");
     if (!exists.rowCount) await runNode(['src/admin.mjs', 'create', 'sabero', 'SABERO Desarrollo', 'real-estate'], folder, platformEnv, 'provision');
     else if (exists.rows[0].status !== 'active') throw new Error('Local company provisioning needs recovery; see provision.log');
-    console.log('Applying the agent and CRM migrations to the local enterprise database...');
-    await runNode(['src/admin.mjs', 'activate', 'sabero', 'agent,crm'], folder, platformEnv, 'migrations');
+    console.log(includeCrm ? 'Applying the agent and CRM migrations to the local enterprise database...' : 'Applying the agent migrations to the local enterprise database...');
+    await runNode(['src/admin.mjs', 'activate', 'sabero', includeCrm ? 'agent,crm' : 'agent'], folder, platformEnv, 'migrations');
     const originalAgent = await readEnv(join(agent, '.env'));
-    const originalCrm = await readEnv(join(crm, '.env'));
+    const originalCrm = includeCrm ? await readEnv(join(crm, '.env')) : {};
     const agentEnv = { ...originalAgent, ...await readEnv(join(folder, 'generated/sabero/agent.env')), NODE_ENV: 'development', HOST: '127.0.0.1', PORT: '3001',
       PLATFORM_API_URL: urls.platform, FRONTEND_URL: 'http://127.0.0.1:5173,http://localhost:5173',
       PUBLIC_WEBHOOK_BASE_URL: 'http://localhost:3001', APP_BASE_URL: 'http://localhost:3001',
@@ -181,45 +186,52 @@ async function up() {
       PLATFORM_ADMIN_TOKEN: secrets.platformAdmin, PLATFORM_ADMIN_EMAILS: originalAgent.PLATFORM_ADMIN_EMAILS || originalAgent.ADMIN_EMAIL,
       PLATFORM_ADMIN_COMPANY_ID: 'sabero', PUBLIC_ACCESS_REQUESTS_ENABLED: 'true' };
     if (!agentEnv.ADMIN_EMAIL || !agentEnv.ADMIN_PASSWORD) throw new Error('Configure ADMIN_EMAIL and ADMIN_PASSWORD in the agent .env before local startup');
-    const crmEnv = { ...originalCrm, ...await readEnv(join(folder, 'generated/sabero/crm.env')), NODE_ENV: 'development', HOST: '127.0.0.1', PORT: '3002',
-      PLATFORM_API_URL: urls.platform, FRONTEND_URL: 'http://127.0.0.1:5174,http://localhost:5174', ADMIN_EMAIL: agentEnv.ADMIN_EMAIL,
-      ADMIN_PASSWORD: agentEnv.ADMIN_PASSWORD, COMPANY_NAME: 'SABERO Desarrollo' };
     await envFile(join(agent, '.env'), agentEnv, true);
-    await envFile(join(crm, '.env'), crmEnv, true);
     await envFile(join(agentWeb, '.env.local'), { ...await readEnv(join(agentWeb, '.env.local')), NEXT_PUBLIC_API_BASE: '', NEXT_PUBLIC_API_PROXY_TARGET: 'http://127.0.0.1:3001' }, true);
-    await envFile(join(crmWeb, '.env.local'), { ...await readEnv(join(crmWeb, '.env.local')), NEXT_PUBLIC_API: 'http://127.0.0.1:3002' }, true);
-    console.log('Building both backends...');
-    await Promise.all([
-      runNode(['node_modules/@nestjs/cli/bin/nest.js', 'build'], agent, {}, 'agent-build'),
-      runNode(['node_modules/@nestjs/cli/bin/nest.js', 'build'], crm, {}, 'crm-build'),
-    ]);
+    let crmEnv;
+    if (includeCrm) {
+      crmEnv = { ...originalCrm, ...await readEnv(join(folder, 'generated/sabero/crm.env')), NODE_ENV: 'development', HOST: '127.0.0.1', PORT: '3002',
+        PLATFORM_API_URL: urls.platform, FRONTEND_URL: 'http://127.0.0.1:5174,http://localhost:5174', ADMIN_EMAIL: agentEnv.ADMIN_EMAIL,
+        ADMIN_PASSWORD: agentEnv.ADMIN_PASSWORD, COMPANY_NAME: 'SABERO Desarrollo' };
+      await envFile(join(crm, '.env'), crmEnv, true);
+      await envFile(join(crmWeb, '.env.local'), { ...await readEnv(join(crmWeb, '.env.local')), NEXT_PUBLIC_API: 'http://127.0.0.1:3002' }, true);
+    }
+    console.log(includeCrm ? 'Building both backends...' : 'Building the agent backend...');
+    const builds = [runNode(['node_modules/@nestjs/cli/bin/nest.js', 'build'], agent, {}, 'agent-build')];
+    if (includeCrm) builds.push(runNode(['node_modules/@nestjs/cli/bin/nest.js', 'build'], crm, {}, 'crm-build'));
+    await Promise.all(builds);
     await launch('platform', ['src/server.mjs'], folder, runtime);
     await waitFor(`${urls.platform}/health`, 'platform');
     await runNode(['dist/scripts/create-admin.js'], agent, agentEnv, 'agent-owner');
-    await runNode(['dist/platform/create-owner.js'], crm, { ...crmEnv, LOCAL_RESET_OWNER_PASSWORD: 'true' }, 'crm-owner');
     await launch('agent-api', ['dist/src/main.js'], agent, agentEnv);
-    await launch('crm-api', ['dist/main.js'], crm, crmEnv);
+    if (includeCrm) {
+      await runNode(['dist/platform/create-owner.js'], crm, { ...crmEnv, LOCAL_RESET_OWNER_PASSWORD: 'true' }, 'crm-owner');
+      await launch('crm-api', ['dist/main.js'], crm, crmEnv);
+    }
     await waitFor('http://127.0.0.1:3001/api/v1/health', 'agent-api');
     await launch('agent-worker', ['dist/src/worker.js'], agent, agentEnv);
     await launch('agent-web', [join(folder, 'src/next-local.cjs'), '5173'], agentWeb, { NODE_ENV: 'development' });
-    await launch('crm-web', [join(folder, 'src/next-local.cjs'), '5174'], crmWeb, { NODE_ENV: 'development' });
-    await check();
-    console.log(`Agent: ${urls.agent}\nCRM: ${urls.crm}\nUse the ADMIN_EMAIL/ADMIN_PASSWORD configured in backend/.env. Remote databases were not changed.`);
+    if (includeCrm) await launch('crm-web', [join(folder, 'src/next-local.cjs'), '5174'], crmWeb, { NODE_ENV: 'development' });
+    await check(includeCrm);
+    console.log(`Agent: ${urls.agent}${includeCrm ? `\nCRM: ${urls.crm}` : ''}\nUse the ADMIN_EMAIL/ADMIN_PASSWORD configured in backend/.env. Remote databases were not changed.`);
   } finally { await registry.close(); }
 }
 
 await mkdir(local, { recursive: true });
 const action = process.argv[2] || 'up';
 try {
-  if (action === 'up') await up();
-  else if (action === 'check') await check();
+  if (action === 'up') await up(true);
+  else if (action === 'up-agent') await up(false);
+  else if (action === 'check') await check(true);
+  else if (action === 'check-agent') await check(false);
   else if (action === 'whatsapp') {
     await runNode(['dist/scripts/connect-local-whatsapp.js'], agent, await readEnv(join(agent, '.env')), 'whatsapp-connect');
     console.log('WhatsApp token verified and stored encrypted. An HTTPS callback is still required for public webhooks.');
   }
   else if (action === 'down') { await stopProcesses(); await compose(['stop']); console.log('Local services stopped; database volumes preserved'); }
-  else if (action === 'restart') { await stopProcesses(); await up(); }
-  else throw new Error('Use up, check, whatsapp, down or restart');
+  else if (action === 'restart') { await stopProcesses(); await up(true); }
+  else if (action === 'restart-agent') { await stopProcesses(); await up(false); }
+  else throw new Error('Use up, up-agent, check, check-agent, whatsapp, down, restart or restart-agent');
 } catch (error) {
   console.error(error.message.replace(/(?:postgres(?:ql)?|mongodb):\/\/\S+/g, '[connection redacted]'));
   process.exitCode = 1;
