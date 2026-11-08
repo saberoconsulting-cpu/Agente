@@ -5,10 +5,12 @@ import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { apiRequest, SessionUser } from '@/lib/api';
 import { Button, Panel } from '@/components/ui';
+import { useUnsavedChanges } from '@/components/action-confirmation';
 
 export function Access({ companyId, users, reload, pushLog }: { companyId: string; users: SessionUser[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  useUnsavedChanges('company-access', Boolean(email.trim() || password));
   async function createUser() {
     await apiRequest('/auth/users', {
       method: 'POST',

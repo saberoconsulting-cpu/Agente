@@ -1,24 +1,28 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CalendarClock, Cloud, ExternalLink, MessageCircle, RefreshCw, Zap } from 'lucide-react';
+import { AlertCircle, CalendarClock, CheckCircle2, Cloud, ExternalLink, MessageCircle, RefreshCw, Zap } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import { Button, Panel, StatusPill } from '@/components/ui';
 import type { WhatsAppConnection, WhatsAppEmbeddedSignupConfig, WhatsAppSignupAssets } from '@/lib/integrations';
+import { useUnsavedChanges } from '@/components/action-confirmation';
 
-export function Links({ companyId, pushLog, reload }: { companyId: string; pushLog: (m: string) => void; reload: () => void }) {
+export function Links({ companyId, pushLog, reload, googleConnectionResult }: { companyId: string; pushLog: (m: string) => void; reload: () => void; googleConnectionResult?:{ok:boolean;message:string}|null }) {
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsAppEmbeddedSignupConfig | null>(null);
   const [whatsappConnections, setWhatsappConnections] = useState<WhatsAppConnection[]>([]);
   const [whatsappBusy, setWhatsappBusy] = useState(false);
   const [whatsappStatus, setWhatsappStatus] = useState('Pendiente de configuracion');
   const [crmEnabled, setCrmEnabled] = useState(false);
   const [googleConsent,setGoogleConsent] = useState(false);
+  const [whatsappIssue,setWhatsappIssue]=useState('');
+  const [refreshing,setRefreshing]=useState(false);
   const pendingCodeRef = useRef<string | null>(null);
   const pendingAssetsRef = useRef<WhatsAppSignupAssets>({});
   const completingRef = useRef(false);
+  useUnsavedChanges('connection-in-progress',whatsappBusy);
 
   useEffect(() => {
-    void loadWhatsAppState().catch(error => setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo consultar WhatsApp.'));
+    void loadWhatsAppState().catch(error => failWhatsApp(error instanceof Error ? error.message : 'No se pudo consultar WhatsApp.'));
     void apiRequest<{ products: string[] }>('/platform/company')
       .then(company => setCrmEnabled(company.products.includes('crm')))
       .catch(() => setCrmEnabled(false));
@@ -41,10 +45,11 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
       });
       setWhatsappConnections([connection]);
       setWhatsappStatus('WhatsApp conectado correctamente.');
+      setWhatsappIssue('');
       pushLog('WhatsApp conectado y token guardado cifrado.');
       reload();
     } catch (error) {
-      setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo completar WhatsApp.');
+      failWhatsApp(error instanceof Error ? error.message : 'No se pudo completar WhatsApp.');
       pushLog('WhatsApp no pudo completar la conexion.');
     } finally {
       setWhatsappBusy(false);
@@ -71,7 +76,8 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
 
       if (payload.status === 'CANCEL' || payload.event === 'CANCEL') {
         setWhatsappBusy(false);
-        setWhatsappStatus('Conexion cancelada por el usuario.');
+        setWhatsappStatus('La conexión no se completó.');
+        setWhatsappIssue('La ventana de Meta se cerró o se canceló antes de terminar. No se guardó ningún cambio. Puedes intentarlo nuevamente.');
         pushLog('WhatsApp Embedded Signup cancelado.');
       }
     };
@@ -94,6 +100,7 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
     ]);
     setWhatsappConfig(config);
     setWhatsappConnections(connections);
+    setWhatsappIssue('');
     if (connections.length) {
       setWhatsappStatus('WhatsApp conectado.');
     } else if (!config.enabled) {
@@ -105,11 +112,13 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
 
   async function connectWhatsApp() {
     if (!whatsappConfig?.enabled || !whatsappConfig.config_id) {
+      setWhatsappIssue('WhatsApp todavía no está listo para conectarse. Actualiza el estado o revisa la configuración de Meta e inténtalo de nuevo.');
       pushLog('WhatsApp Embedded Signup pendiente: falta config_id real de Meta.');
       return;
     }
 
     setWhatsappBusy(true);
+    setWhatsappIssue('');
     setWhatsappStatus('Abriendo Meta...');
     pendingCodeRef.current = null;
     pendingAssetsRef.current = {};
@@ -121,7 +130,8 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
         const code = response.authResponse?.code;
         if (!code) {
           setWhatsappBusy(false);
-          setWhatsappStatus(response.status === 'not_authorized' ? 'Meta no autorizo la conexion.' : 'Conexion cancelada o incompleta.');
+          setWhatsappStatus('La conexión no se completó.');
+          setWhatsappIssue(response.status === 'not_authorized' ? 'Meta no autorizó la conexión. Revisa los permisos de la cuenta e inténtalo nuevamente.' : 'La ventana de Meta se cerró o el proceso quedó incompleto. No se guardó ningún cambio. Inténtalo de nuevo.');
           pushLog('WhatsApp no entrego codigo de autorizacion.');
           return;
         }
@@ -140,8 +150,24 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
       });
     } catch (error) {
       setWhatsappBusy(false);
-      setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo iniciar Meta.');
+      failWhatsApp(error instanceof Error ? error.message : 'No se pudo iniciar Meta.');
     }
+  }
+
+  function failWhatsApp(message:string){
+    setWhatsappStatus('No se pudo conectar WhatsApp.');
+    setWhatsappIssue(`${message} Inténtalo de nuevo.`);
+  }
+
+  async function refreshConnections(){
+    setRefreshing(true);
+    try{await loadWhatsAppState();pushLog('Estado de vinculaciones actualizado.');reload();}
+    catch(error){failWhatsApp(error instanceof Error?error.message:'No se pudo actualizar WhatsApp.');}
+    finally{setRefreshing(false);}
+  }
+
+  function connectGoogle(){
+    window.location.assign(`/api/v1/integrations/google/start?company_id=${encodeURIComponent(companyId)}`);
   }
 
   return (
@@ -152,10 +178,7 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
             <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Vinculaciones</p>
             <h2 className="mt-2 text-3xl font-black tracking-[-0.03em] text-sabero-navy">Canales del agente</h2>
           </div>
-          <Button onClick={() => {
-            void loadWhatsAppState().then(() => { pushLog('Estado de vinculaciones actualizado.'); reload(); })
-              .catch(error => setWhatsappStatus(error instanceof Error ? error.message : 'No se pudo actualizar WhatsApp.'));
-          }}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button>
+          <Button disabled={refreshing||whatsappBusy} onClick={() => void refreshConnections()}><RefreshCw className={`mr-2 h-4 w-4 ${refreshing?'animate-spin':''}`} />{refreshing?'Actualizando…':'Actualizar'}</Button>
         </div>
       </Panel>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -178,7 +201,7 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
           <Button onClick={connectWhatsApp} disabled={whatsappBusy || !whatsappConfig?.enabled}>
             <MessageCircle className="mr-2 h-4 w-4" />{whatsappBusy ? 'Conectando...' : 'Conectar WhatsApp'}
           </Button>
-          <Button disabled={!googleConsent} onClick={() => { window.location.href = `/api/v1/integrations/google/start?company_id=${companyId}`; }}>
+          <Button disabled={!googleConsent} onClick={connectGoogle}>
             <Cloud className="mr-2 h-4 w-4" />Reconectar Google
           </Button>
           <Button
@@ -188,14 +211,11 @@ export function Links({ companyId, pushLog, reload }: { companyId: string; pushL
             <ExternalLink className="mr-2 h-4 w-4" />Abrir Google Calendar
           </Button>
         </div>
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-600">
-          {whatsappStatus}
-          {whatsappConnections[0] && (
-            <span className="ml-2 text-sabero-navy">
-              {whatsappConnections[0].verified_name || whatsappConnections[0].display_phone_number || whatsappConnections[0].phone_number_id}
-            </span>
-          )}
+        <div role={whatsappIssue?'alert':'status'} className={`mt-4 rounded-2xl border px-4 py-4 text-sm ${whatsappIssue?'border-rose-200 bg-rose-50 text-rose-800':whatsappConnections.length?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-slate-200 bg-slate-50 text-slate-600'}`}>
+          <div className="flex items-start gap-3">{whatsappIssue?<AlertCircle className="mt-0.5 h-5 w-5 shrink-0"/>:<CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0"/>}<div className="min-w-0 flex-1"><p className="font-bold">{whatsappStatus}{whatsappConnections[0]&&<span className="ml-2 text-sabero-navy">{whatsappConnections[0].verified_name || whatsappConnections[0].display_phone_number || whatsappConnections[0].phone_number_id}</span>}</p>{whatsappIssue&&<p className="mt-1 font-normal leading-6">{whatsappIssue}</p>}</div></div>
+          {whatsappIssue&&<Button variant="ghost" className="mt-4" disabled={whatsappBusy||refreshing} onClick={()=>void (whatsappConfig?.enabled?connectWhatsApp():refreshConnections())}><RefreshCw className="mr-2 h-4 w-4"/>Intentar de nuevo</Button>}
         </div>
+        {googleConnectionResult&&<div role={googleConnectionResult.ok?'status':'alert'} className={`mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-sm ${googleConnectionResult.ok?'border-emerald-200 bg-emerald-50 text-emerald-800':'border-amber-200 bg-amber-50 text-amber-900'}`}><div className="flex items-start gap-3">{googleConnectionResult.ok?<CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0"/>:<AlertCircle className="mt-0.5 h-5 w-5 shrink-0"/>}<p className="leading-6">{googleConnectionResult.message}</p></div>{!googleConnectionResult.ok&&<Button variant="ghost" disabled={!googleConsent} onClick={connectGoogle}><RefreshCw className="mr-2 h-4 w-4"/>Intentar de nuevo</Button>}</div>}
       </Panel>
     </div>
   );

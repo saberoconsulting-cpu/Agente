@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ActionConfirmationProvider } from '@/components/action-confirmation';
 
 export const metadata: Metadata = {
   title: {
@@ -43,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body>
-        {children}
+        <ActionConfirmationProvider>{children}</ActionConfirmationProvider>
       </body>
     </html>
   );

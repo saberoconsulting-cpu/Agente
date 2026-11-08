@@ -6,6 +6,7 @@ import {DeleteRecordButton,Pagination,usePagination} from '@/components/list-con
 import {ReviewModal} from '@/components/review-modal';
 import {apiRequest} from '@/lib/api';
 import {Button,Panel} from '@/components/ui';
+import {useActionConfirmation,useUnsavedChanges} from '@/components/action-confirmation';
 
 export type Application={has_password?:boolean;id:string;business_name:string;contact_name:string;email:string;phone:string;phone_country?:string;status:string;created_at:string;payment_reference?:string;company_id?:string;rejection_reason?:string;notification?:{status:string;decision:string;error_code?:string;sent_at?:string;attempts:number}|null};
 type Company={id:string;name:string;status:string;products:string[]};
@@ -16,11 +17,13 @@ function Badge({status}:{status:string}){return <span className={`inline-flex it
 function mailLabel(item:Application){return item.notification?.status==='sent'?'Aceptado por Brevo':item.notification?.status==='failed'?'Envío pendiente':item.notification?.status==='skipped'?'Dirección de prueba':item.notification?'En cola':'Sin notificar';}
 
 export function AccessRequests({adminCompanyId,initialRequestId,onDismiss,onReviewed}:{adminCompanyId:string;initialRequestId?:string;onDismiss?:()=>void;onReviewed?:()=>Promise<void>}){
+  const {confirmDiscard}=useActionConfirmation();
   const [items,setItems]=useState<Application[]>([]),[companies,setCompanies]=useState<Company[]>([]);
   const [selected,setSelected]=useState<string|null>(initialRequestId||null),[search,setSearch]=useState(''),[filter,setFilter]=useState('all');
   const [reference,setReference]=useState(''),[paid,setPaid]=useState(false),[company,setCompany]=useState(''),[reason,setReason]=useState('');
   const [decision,setDecision]=useState<'approve'|'reject'>('approve');
   const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+  useUnsavedChanges('access-request-review',Boolean(reference.trim()||paid||company||reason.trim()||decision==='reject'));
   const heading=useRef<HTMLHeadingElement>(null);
   const load=useCallback(async()=>{
     setLoading(true);setError('');
@@ -39,6 +42,7 @@ export function AccessRequests({adminCompanyId,initialRequestId,onDismiss,onRevi
     setSaving(true);setError('');setNotice('');
     try{
       await apiRequest(`/platform/admin/access-requests/${current.id}`,{method:'POST',body:JSON.stringify({action,payment_confirmed:paid,payment_reference:reference,target_company_id:company,rejection_reason:reason})});
+      setReference('');setPaid(false);setCompany('');setReason('');setDecision('approve');
       
       setNotice(action==='activate'?'Acceso habilitado. Consulta abajo el estado del correo.':action==='approve'?'Solicitud aprobada. Completa la habilitación del acceso.':action==='reject'?'Solicitud rechazada. Consulta abajo el estado del correo.':'Reintento realizado. Consulta el estado del correo.');
       await load();
@@ -48,10 +52,10 @@ export function AccessRequests({adminCompanyId,initialRequestId,onDismiss,onRevi
   }
   const messages=<>{error&&<p role="alert" className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-800">{error}</p>}{notice&&<p role="status" className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">{notice}</p>}</>;
 
-  const dismiss=()=>{if(saving)return;setSelected(null);setNotice('');setError('');onDismiss?.();};
-  if(initialRequestId&&!current)return <ReviewModal title="Solicitud de empresa" onClose={dismiss}><p role="status" className="py-8 text-center text-sm text-slate-500">{loading?'Cargando datos de la empresa...':error||'La solicitud ya no está disponible.'}</p></ReviewModal>;
-  if(current)return <ReviewModal title="Validar empresa" busy={saving} onClose={dismiss}><div className="grid gap-6">
-    <div><button type="button" disabled={saving} onClick={dismiss} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-sabero-electric"><ArrowLeft className="h-4 w-4"/>Todas las solicitudes</button><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Revisión de empresa</p><h2 ref={heading} tabIndex={-1} className="mt-2 text-2xl font-bold tracking-tight text-sabero-navy outline-none">{current.business_name}</h2></div><Badge status={current.status}/></div></div>
+  const dismiss=async()=>{if(saving||!await confirmDiscard())return;setSelected(null);setNotice('');setError('');setReference('');setPaid(false);setCompany('');setReason('');setDecision('approve');onDismiss?.();};
+  if(initialRequestId&&!current)return <ReviewModal title="Solicitud de empresa" onClose={()=>void dismiss()}><p role="status" className="py-8 text-center text-sm text-slate-500">{loading?'Cargando datos de la empresa...':error||'La solicitud ya no está disponible.'}</p></ReviewModal>;
+  if(current)return <ReviewModal title="Validar empresa" busy={saving} onClose={()=>void dismiss()}><div className="grid gap-6">
+    <div><button type="button" disabled={saving} onClick={()=>void dismiss()} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-sabero-electric"><ArrowLeft className="h-4 w-4"/>Todas las solicitudes</button><div className="flex flex-wrap items-center justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Revisión de empresa</p><h2 ref={heading} tabIndex={-1} className="mt-2 text-2xl font-bold tracking-tight text-sabero-navy outline-none">{current.business_name}</h2></div><Badge status={current.status}/></div></div>
     {messages}
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)]">
       <div className="grid gap-6"><Panel><div className="mb-6 flex items-center gap-3"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-sabero-electric"><Building2 className="h-6 w-6"/></span><div><h3 className="font-bold text-sabero-navy">Datos de contacto</h3><p className="text-xs text-slate-400">Recibida el {new Date(current.created_at).toLocaleDateString('es')}</p></div></div><p className="text-lg font-semibold text-sabero-navy">{current.contact_name}</p><a href={`mailto:${current.email}`} className="mt-4 flex items-center gap-3 break-all text-sm text-slate-600 hover:text-sabero-electric"><Mail className="h-4 w-4 shrink-0"/>{current.email}</a><p className="mt-4 flex items-center gap-3 text-sm text-slate-600"><Phone className="h-4 w-4 shrink-0"/>{current.phone}</p>{current.phone_country&&<p className="mt-3 pl-7 text-xs text-slate-400">{new Intl.DisplayNames(['es'],{type:'region'}).of(current.phone_country)}</p>}{current.payment_reference&&<div className="mt-6 border-t border-slate-100 pt-4"><p className="text-xs text-slate-400">Referencia de pago</p><p className="mt-1 break-words text-sm font-medium">{current.payment_reference}</p></div>}</Panel>

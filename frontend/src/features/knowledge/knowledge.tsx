@@ -7,6 +7,7 @@ import { apiRequest } from '@/lib/api';
 import type { DriveFile } from '@/lib/types';
 import { Button, Panel, StatusPill } from '@/components/ui';
 import type { PickerConfig, PickerDocument, TokenClient } from '@/lib/integrations';
+import { useUnsavedChanges } from '@/components/action-confirmation';
 
 export function Knowledge({ companyId, files, reload, pushLog }: { companyId: string; files: DriveFile[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);
@@ -18,29 +19,36 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
   const [dataConsent,setDataConsent] = useState(false);
   const [pickerError,setPickerError] = useState('');
   const [pickerAttempt,setPickerAttempt] = useState(0);
+  useUnsavedChanges('drive-connection-in-progress',pickerBusy);
 
   const handlePickerSelection = useCallback(async (data: { action: string; docs?: PickerDocument[] }) => {
     if (data.action !== window.google.picker.Action.PICKED) {
       setPickerBusy(false);
+      setPickerError('El selector de Google Drive se cerró antes de elegir documentos. No se guardó ningún cambio. Inténtalo de nuevo cuando estés listo.');
       return;
     }
 
-    for (const doc of data.docs || []) {
-      await apiRequest('/google-drive/files', {
-        method: 'POST',
-        body: JSON.stringify({
-          company_id: companyId,
-          google_file_id: doc.id,
-          name: doc.name,
-          mime_type: doc.mimeType,
-          web_view_link: doc.url,
-        }),
-      });
-      pushLog(`Documento autorizado: ${doc.name}.`);
+    try {
+      for (const doc of data.docs || []) {
+        await apiRequest('/google-drive/files', {
+          method: 'POST',
+          body: JSON.stringify({
+            company_id: companyId,
+            google_file_id: doc.id,
+            name: doc.name,
+            mime_type: doc.mimeType,
+            web_view_link: doc.url,
+          }),
+        });
+        pushLog(`Documento autorizado: ${doc.name}.`);
+      }
+      setPickerError('');
+      await reload(companyId);
+    } catch (error) {
+      setPickerError(`${error instanceof Error?error.message:'No se pudieron guardar los documentos seleccionados.'} Inténtalo de nuevo.`);
+    } finally {
+      setPickerBusy(false);
     }
-
-    setPickerBusy(false);
-    await reload(companyId);
   }, [companyId, pushLog, reload]);
 
   const openPicker = useCallback((config: PickerConfig, token: string) => {
@@ -98,7 +106,7 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
             setPickerError('');
             openPicker(config, response.access_token);
           },
-          error_callback:()=>{setPickerBusy(false);},
+          error_callback:()=>{setPickerBusy(false);setPickerError('Google cerró la autorización antes de completarla. No se guardó ningún cambio. Inténtalo de nuevo.');},
         });
 
         setTokenClient(client);
@@ -143,6 +151,7 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
       return;
     }
 
+    setPickerError('');
     setPickerBusy(true);
     tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
   }

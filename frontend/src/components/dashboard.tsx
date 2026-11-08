@@ -13,6 +13,7 @@ import { apiRequest, clearToken, SessionUser } from '@/lib/api';
 import type { AgentSettings, DashboardSummary, DriveFile, Opportunity, OpportunityFollowupDraft } from '@/lib/types';
 import { Button, StatusPill } from '@/components/ui';
 import { Access, AgentConfig, Analytics, Knowledge, Links, Opportunities, Overview } from '@/features/dashboard/views';
+import { useActionConfirmation } from '@/components/action-confirmation';
 
 const views = [
   ['companies', 'Empresas · SABERO', Building2],
@@ -29,6 +30,7 @@ const views = [
 ] as const;
 
 export function DashboardApp({ onLogout }: { onLogout: () => void }) {
+  const { confirm, confirmDiscard, hasUnsavedChanges, resetDirty } = useActionConfirmation();
   const [user, setUser] = useState<SessionUser | null>(null);
   const [view, setView] = useState<(typeof views)[number][0]>('overview');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,6 +46,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [followupDrafts, setFollowupDrafts] = useState<OpportunityFollowupDraft[]>([]);
   const [focusedOpportunity, setFocusedOpportunity] = useState<string | null>(null);
+  const [googleConnectionResult, setGoogleConnectionResult] = useState<{ok:boolean;message:string}|null>(null);
   const companyId = user?.company_id || 'sabero';
 
   const pushLog = useCallback((message: string) => {
@@ -103,7 +106,10 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
     const params = new URLSearchParams(window.location.search);
     const googleStatus = params.get('google');
     if (!googleStatus) return;
-    pushLog(googleStatus === 'connected' ? 'Google conectado correctamente. Tokens guardados cifrados.' : `Google no pudo conectarse: ${params.get('reason') || 'error desconocido'}.`);
+    const connected=googleStatus === 'connected';
+    const message=connected?'Google se conectó correctamente. Los permisos quedaron guardados de forma segura.':`Google no pudo completar la conexión${params.get('reason')?`: ${params.get('reason')}`:''}. Inténtalo de nuevo.`;
+    setGoogleConnectionResult({ok:connected,message});
+    pushLog(connected ? 'Google conectado correctamente. Tokens guardados cifrados.' : message);
     setView('links');
     window.history.replaceState({}, '', window.location.pathname);
   }, [pushLog]);
@@ -126,6 +132,33 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
     }
     onLogout();
   }, [onLogout]);
+
+  const navigateTo = useCallback(async (nextView: (typeof views)[number][0]) => {
+    if (nextView === view) {
+      setMenuOpen(false);
+      return;
+    }
+    const canLeave = await confirmDiscard();
+    if (!canLeave) return;
+    setView(nextView);
+    setMenuOpen(false);
+  }, [confirmDiscard, view]);
+
+  const requestSignOut = useCallback(async () => {
+    const accepted = await confirm({
+      title: '¿Quieres cerrar tu sesión?',
+      description: hasUnsavedChanges
+        ? 'Tienes cambios sin guardar. Al cerrar sesión se perderán y tendrás que volver a ingresar para continuar.'
+        : 'Saldrás de tu centro comercial IA. Podrás volver a ingresar con tu correo y contraseña.',
+      confirmLabel: 'Sí, cerrar sesión',
+      cancelLabel: 'Quedarme aquí',
+      tone: 'danger',
+      icon: 'logout',
+    });
+    if (!accepted) return;
+    resetDirty();
+    await signOut();
+  }, [confirm, hasUnsavedChanges, resetDirty, signOut]);
 
   const activeTitle = useMemo(() => views.find(([key]) => key === view)?.[1], [view]);
   const canOperate = Boolean(user && ['owner', 'admin'].includes(user.role));
@@ -166,10 +199,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
               aria-label={label}
               aria-current={view === key ? 'page' : undefined}
               title={sidebarCollapsed ? label : undefined}
-              onClick={() => {
-                setView(key);
-                setMenuOpen(false);
-              }}
+              onClick={() => void navigateTo(key)}
               className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-4 py-2.5 text-left text-sm font-semibold transition-colors ${sidebarCollapsed ? 'xl:justify-center xl:px-0' : ''} ${view === key ? 'bg-sabero-electric text-white' : 'text-blue-100 hover:bg-white/10'}`}
             >
               <Icon className="h-5 w-5 shrink-0" />
@@ -178,7 +208,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
             </div>
           ))}
         </nav>
-        <button type="button" onClick={()=>void signOut()} title="Cerrar sesión" aria-label="Cerrar sesión" className={`mt-4 flex min-h-11 shrink-0 items-center gap-3 rounded-xl border-t border-white/10 px-4 text-sm text-blue-200 hover:bg-white/10 ${sidebarCollapsed?'xl:justify-center xl:px-0':''}`}><LogOut className="h-5 w-5 shrink-0"/><span className={sidebarCollapsed?'xl:hidden':''}>Cerrar sesión</span></button>
+        <button type="button" onClick={()=>void requestSignOut()} title="Cerrar sesión" aria-label="Cerrar sesión" className={`mt-4 flex min-h-11 shrink-0 items-center gap-3 rounded-xl border-t border-white/10 px-4 text-sm text-blue-200 hover:bg-white/10 ${sidebarCollapsed?'xl:justify-center xl:px-0':''}`}><LogOut className="h-5 w-5 shrink-0"/><span className={sidebarCollapsed?'xl:hidden':''}>Cerrar sesión</span></button>
       </aside>
       <section className={`transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? 'xl:pl-20' : 'xl:pl-64'}`}>
         <header className={`sticky top-0 z-20 border-b border-slate-200/70 bg-white/86 px-5 py-4 backdrop-blur xl:px-10 ${['companies','overview'].includes(view)?'xl:hidden':''}`}>
@@ -213,13 +243,13 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
           {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
           {view === 'companies' && platformAdmin && <Companies adminCompanyId={companyId} />}
           {view === 'requests' && platformAdmin && <AccessRequests adminCompanyId={companyId} />}
-          {view === 'contacts' && <Contacts onOpportunity={id => {setFocusedOpportunity(id);setView('opportunities');}} />}
+          {view === 'contacts' && <Contacts onOpportunity={id => {setFocusedOpportunity(id);void navigateTo('opportunities');}} />}
           {view === 'usage' && <Usage />}
-          {view === 'overview' && <Overview summary={summary} settings={settings} user={user} opportunities={opportunities} log={log} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} navigate={setView} />}
+          {view === 'overview' && <Overview summary={summary} settings={settings} user={user} opportunities={opportunities} log={log} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} navigate={next => void navigateTo(next)} />}
           {view === 'analytics' && <Analytics summary={summary} opportunities={opportunities} />}
           {view === 'knowledge' && <Knowledge companyId={companyId} files={files} reload={loadFiles} pushLog={pushLog} />}
           {view === 'agent' && <AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} />}
-          {view === 'links' && <Links companyId={companyId} reload={reloadCommercial} pushLog={pushLog} />}
+          {view === 'links' && <Links companyId={companyId} reload={reloadCommercial} pushLog={pushLog} googleConnectionResult={googleConnectionResult} />}
           {view === 'opportunities' && (
             <Opportunities items={opportunities} users={users} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} initialSelectedId={focusedOpportunity} />
           )}

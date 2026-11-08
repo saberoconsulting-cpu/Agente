@@ -6,6 +6,7 @@ import { apiRequest, SessionUser } from '@/lib/api';
 import type { Opportunity, OpportunityFollowupDraft } from '@/lib/types';
 import { Button } from '@/components/ui';
 import { DraftInbox } from '@/components/draft-inbox';
+import { useActionConfirmation, useUnsavedChanges } from '@/components/action-confirmation';
 import styles from './pipeline.module.css';
 
 type Stage = { id: string; label: string };
@@ -21,6 +22,7 @@ const shortDate = (date: string) => new Date(date).toLocaleDateString('es-PE', {
 const failure = (error: unknown) => error instanceof Error ? error.message : 'No se pudo completar la acción. Inténtalo de nuevo.';
 
 export function Opportunities({ items, users, drafts, canOperate, reload, initialSelectedId }: { items: Opportunity[]; users: SessionUser[]; drafts: OpportunityFollowupDraft[]; canOperate: boolean; reload: () => Promise<void>; initialSelectedId?:string|null }) {
+  const { confirmDiscard } = useActionConfirmation();
   const [cards, setCards] = useState(items);
   const [config, setConfig] = useState<Configuration | null>(null);
   const [search, setSearch] = useState('');
@@ -38,6 +40,7 @@ export function Opportunities({ items, users, drafts, canOperate, reload, initia
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [newStage, setNewStage] = useState<string | null>(null);
   const [contactId, setContactId] = useState('');
+  useUnsavedChanges('opportunity-editor', Boolean(note.trim() || contactId));
   const drawer = useRef<HTMLDialogElement>(null);
   const createDialog = useRef<HTMLDialogElement>(null);
   const imported = useRef(false);
@@ -121,7 +124,7 @@ export function Opportunities({ items, users, drafts, canOperate, reload, initia
     try {
       const card = await apiRequest<Opportunity>('/opportunities', { method: 'POST', body: JSON.stringify({ lead_id: contactId }) });
       if (newStage !== card.stage) await apiRequest(`/opportunities/${card.id}/stage`, { method: 'PATCH', body: JSON.stringify({ stage: newStage }) });
-      await reload(); setCards(await apiRequest<Opportunity[]>('/opportunities')); setNewStage(null);
+      await reload(); setCards(await apiRequest<Opportunity[]>('/opportunities')); setContactId(''); setNewStage(null);
     } catch (err) { setError(failure(err)); } finally { setBusy(false); }
   }
   async function saveNote(event: React.FormEvent) {
@@ -145,6 +148,8 @@ export function Opportunities({ items, users, drafts, canOperate, reload, initia
     try { await apiRequest(`/opportunities/${selected}/assign`, { method: 'PATCH', body: JSON.stringify({ assignee_id: assigneeId }) }); await reload(); setDetail(await apiRequest<Detail>(`/opportunities/${selected}`)); setNotice('Responsable asignado.'); }
     catch (err) { setError(failure(err)); } finally { setBusy(false); }
   }
+  async function closeDrawer(){if(!await confirmDiscard())return;setSelected(null);}
+  async function closeCreate(){if(!await confirmDiscard())return;setContactId('');setNewStage(null);}
 
   const stages = useMemo(() => {
     const base = config?.stages || [];
@@ -208,9 +213,9 @@ export function Opportunities({ items, users, drafts, canOperate, reload, initia
     </section>
     {drafts.length > 0 && <details className={styles.followups}><summary>Seguimientos por revisar <span>{drafts.length}</span></summary><DraftInbox drafts={drafts} canOperate={canOperate} reload={reload} compact /></details>}
 
-    <dialog ref={drawer} className={styles.drawer} onCancel={() => setSelected(null)} onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+    <dialog ref={drawer} className={styles.drawer} onCancel={event => {event.preventDefault();void closeDrawer();}} onClick={e => { if (e.target === e.currentTarget) void closeDrawer(); }}>
       <div className={styles.drawerInner}>
-        <header className={styles.drawerHeader}><div><span className={styles.eyebrow}>FICHA DE OPORTUNIDAD</span><h3>{selectedCard?.lead_name || selectedCard?.whatsapp_number || 'Contacto'}</h3></div><button autoFocus aria-label="Cerrar ficha" onClick={() => setSelected(null)}><X size={21} /></button></header>
+        <header className={styles.drawerHeader}><div><span className={styles.eyebrow}>FICHA DE OPORTUNIDAD</span><h3>{selectedCard?.lead_name || selectedCard?.whatsapp_number || 'Contacto'}</h3></div><button autoFocus aria-label="Cerrar ficha" onClick={() => void closeDrawer()}><X size={21} /></button></header>
         {error && <p className={styles.error} role="alert">{error}</p>}
         {!detail ? <p className={styles.loading}>Cargando la ficha…</p> : <>
           <div className={styles.contactBar}><MessageCircle size={16} />{selectedCard?.whatsapp_number}<span>{detail.score_signals?.manual_stage ? 'Gestión manual' : 'Clasificación automática'}</span></div>
@@ -223,8 +228,8 @@ export function Opportunities({ items, users, drafts, canOperate, reload, initia
         </>}
       </div>
     </dialog>
-    <dialog ref={createDialog} className={styles.createDialog} onCancel={() => setNewStage(null)}>
-      <form onSubmit={e => void createCard(e)}><header><h3>Nueva oportunidad</h3><button type="button" aria-label="Cerrar nueva oportunidad" onClick={() => setNewStage(null)}><X size={20} /></button></header><p>Agrega un contacto a {labels[newStage || 'nuevo']}.</p>{error && <p role="alert" className={styles.error}>{error}</p>}<label>Contacto<select required value={contactId} onChange={e => setContactId(e.target.value)}><option value="">Selecciona un contacto</option>{contacts.filter(contact => !cards.some(card => card.lead_id === contact.id && !closed(card.stage))).map(contact => <option key={contact.id} value={contact.id}>{contact.name || contact.whatsapp_number}</option>)}</select></label><small>Los nuevos contactos que escriban al agente aparecen automáticamente.</small><Button type="submit" disabled={busy || !contactId}>Agregar al tablero</Button></form>
+    <dialog ref={createDialog} className={styles.createDialog} onCancel={event => {event.preventDefault();void closeCreate();}}>
+      <form onSubmit={e => void createCard(e)}><header><h3>Nueva oportunidad</h3><button type="button" aria-label="Cerrar nueva oportunidad" onClick={() => void closeCreate()}><X size={20} /></button></header><p>Agrega un contacto a {labels[newStage || 'nuevo']}.</p>{error && <p role="alert" className={styles.error}>{error}</p>}<label>Contacto<select required value={contactId} onChange={e => setContactId(e.target.value)}><option value="">Selecciona un contacto</option>{contacts.filter(contact => !cards.some(card => card.lead_id === contact.id && !closed(card.stage))).map(contact => <option key={contact.id} value={contact.id}>{contact.name || contact.whatsapp_number}</option>)}</select></label><small>Los nuevos contactos que escriban al agente aparecen automáticamente.</small><Button type="submit" disabled={busy || !contactId}>Agregar al tablero</Button></form>
     </dialog>
   </div>;
 }

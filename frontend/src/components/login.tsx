@@ -10,8 +10,10 @@ import { LegalLinks } from '@/components/legal-links';
 import {PhoneField} from '@/components/phone-field';
 import {internationalPhone} from '@/lib/phone';
 import type {CountryCode} from 'libphonenumber-js/max';
+import {useActionConfirmation,useUnsavedChanges} from '@/components/action-confirmation';
 
 export function LoginScreen({ onReady }: { onReady: () => void }) {
+  const {confirmDiscard}=useActionConfirmation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -25,6 +27,12 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
   const [website, setWebsite] = useState('');
   const [received, setReceived] = useState(false);
   const [step,setStep] = useState<1|2>(1);
+  useUnsavedChanges('public-access-form',!received&&Boolean(email.trim()||password||businessName.trim()||contactName.trim()||phone.trim()));
+
+  async function changeMode(){
+    if(!await confirmDiscard({title:'¿Cambiar de formulario?',description:'La información que escribiste todavía no se ha enviado. Si cambias ahora, se limpiará el formulario.',confirmLabel:'Cambiar y limpiar',cancelLabel:'Seguir aquí'}))return;
+    setEmail('');setPassword('');setBusinessName('');setContactName('');setPhone('');setPhoneCountry('');setWebsite('');setMode(mode==='login'?'register':'login');setStep(1);setReceived(false);setError('');
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -182,7 +190,7 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
             {mode === 'register' && step === 2 && <Button type="button" variant="ghost" aria-label="Volver al paso anterior" onClick={()=>{setStep(1);setError('');}} disabled={loading}><ArrowLeft className="h-4 w-4"/></Button>}
             <Button disabled={loading} className="flex-1" variant="primary">{loading ? 'Enviando...' : mode === 'login' ? 'Entrar al dashboard' : step === 1 ? 'Continuar' : 'Enviar solicitud'}{mode === 'register' && !loading && <ArrowRight className="ml-2 h-4 w-4"/>}</Button>
           </div>}
-          <button type="button" disabled={loading} onClick={()=>{setMode(mode === 'login' ? 'register' : 'login');setStep(1);setReceived(false);setError('');}} className="mt-5 w-full text-sm font-semibold text-sabero-electric hover:text-blue-700 disabled:opacity-50">{mode === 'login' ? 'Solicitar acceso empresarial' : 'Ya tengo acceso'}</button>
+          <button type="button" disabled={loading} onClick={()=>void changeMode()} className="mt-5 w-full text-sm font-semibold text-sabero-electric hover:text-blue-700 disabled:opacity-50">{mode === 'login' ? 'Solicitar acceso empresarial' : 'Ya tengo acceso'}</button>
           <div className="mt-6 border-t border-slate-100 pt-5"><LegalLinks /></div>
         </form>
       </section>

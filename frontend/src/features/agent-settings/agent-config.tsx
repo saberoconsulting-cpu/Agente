@@ -6,14 +6,23 @@ import { Bot, Plus, Trash2 } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import type { AgentSettings } from '@/lib/types';
 import { Button, Panel, StatusPill } from '@/components/ui';
+import { useUnsavedChanges } from '@/components/action-confirmation';
 
 export function AgentConfig({ companyId, settings, reload, pushLog }: { companyId: string; settings: AgentSettings | null; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [brief, setBrief] = useState(companyId === 'sabero' ? 'Somos SABERO Consulting. Vendemos software a medida, arquitectura cloud y automatizaciones con IA para empresas que quieren vender mas, operar mejor y escalar.' : '');
+  const [briefTouched, setBriefTouched] = useState(false);
   const [rules, setRules] = useState(settings?.settings.system_rules || '');
   const [manualServiceName, setManualServiceName] = useState('');
   const [manualServiceDescription, setManualServiceDescription] = useState('');
   const [scheduling, setScheduling] = useState(false);
   const [savingScheduling, setSavingScheduling] = useState(false);
+  useUnsavedChanges('agent-settings', Boolean(
+    briefTouched
+    || manualServiceName.trim()
+    || manualServiceDescription.trim()
+    || (settings && scheduling !== Boolean(settings.settings.scheduling_enabled))
+    || (settings && rules !== (settings.settings.system_rules || ''))
+  ));
   useEffect(() => { setScheduling(Boolean(settings?.settings.scheduling_enabled)); }, [settings?.settings.scheduling_enabled]);
 
   async function saveScheduling() {
@@ -77,6 +86,7 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
     }
 
     setRules(generatedRules);
+    setBriefTouched(false);
     pushLog('Agente comercial configurado desde el briefing.');
     await reload(companyId);
   }
@@ -128,7 +138,7 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
         <textarea
           className="mt-5 min-h-32 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-sabero-navy outline-none focus:border-sabero-electric"
           value={brief}
-          onChange={(event) => setBrief(event.target.value)}
+          onChange={(event) => { setBrief(event.target.value); setBriefTouched(true); }}
           placeholder="Ejemplo: vendemos software a medida para inmobiliarias, automatizamos ventas por WhatsApp y agendamos demos..."
         />
         <div className="mt-4 flex flex-wrap gap-3">

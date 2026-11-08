@@ -5,6 +5,7 @@ import { ArrowLeft, ArrowUpRight, Bot, CalendarClock, Check, ChevronLeft, Chevro
 import { apiBase, apiRequest, getToken, SessionUser } from '@/lib/api';
 import { RecordPermissions } from '@/components/list-controls';
 import { Button } from '@/components/ui';
+import { useActionConfirmation, useUnsavedChanges } from '@/components/action-confirmation';
 import styles from './contacts.module.css';
 
 type Attention={mode:'auto'|'human';assignee_id?:string};
@@ -27,6 +28,7 @@ function zonedTime(value:string,timezone:string){
 function mergeMessages(previous:Message[],incoming:Message[]){return [...new Map([...previous,...incoming].map(item=>[item.id,item])).values()].sort((a,b)=>a.created_at.localeCompare(b.created_at)||a.id.localeCompare(b.id));}
 
 export function Contacts({onOpportunity}:{onOpportunity?:(id:string)=>void}){
+  const { confirmDiscard } = useActionConfirmation();
   const user=useContext(RecordPermissions);
   const canOperate=!!user&&['owner','admin'].includes(user.role);
   const [contacts,setContacts]=useState<Contact[]>([]),[users,setUsers]=useState<SessionUser[]>([]);
@@ -39,6 +41,8 @@ export function Contacts({onOpportunity}:{onOpportunity?:(id:string)=>void}){
   const [note,setNote]=useState(''),[nextAction,setNextAction]=useState(''),[followupText,setFollowupText]=useState(''),[followupDate,setFollowupDate]=useState('');
   const [meetingDate,setMeetingDate]=useState(''),[duration,setDuration]=useState('30'),[meetingEmail,setMeetingEmail]=useState(''),[calendars,setCalendars]=useState<{id:string;label:string}[]>([]),[calendarId,setCalendarId]=useState('');
   const [mobileInfo,setMobileInfo]=useState(false);
+  const hasContactDraft=Boolean(draft.trim()||attachment||note.trim()||nextAction.trim()||followupText.trim()||followupDate||meetingDate||templateKey||parameters.some(value=>value.trim()));
+  useUnsavedChanges('contact-workspace', hasContactDraft);
   const uploadRef=useRef<HTMLInputElement>(null),bottom=useRef<HTMLDivElement>(null),pendingSend=useRef<{signature:string;id:string}|null>(null),meetingRequest=useRef<{signature:string;id:string}|null>(null);
   const activeRef=useRef<string|null>(selected);activeRef.current=selected;
 
@@ -75,7 +79,7 @@ export function Contacts({onOpportunity}:{onOpportunity?:(id:string)=>void}){
     return()=>{active=false;clearInterval(timer);};
   },[selected,conversationId]);
 
-  async function action(work:()=>Promise<unknown>,success?:string){setBusy(true);setError('');try{await work();if(selected)await refreshWorkspace(selected);await loadList();if(success)setNotice(success);}catch(err){setError(errorText(err));}finally{setBusy(false);}}
+  async function action(work:()=>Promise<unknown>,success?:string){setBusy(true);setError('');try{await work();if(selected)await refreshWorkspace(selected);await loadList();if(success)setNotice(success);return true;}catch(err){setError(errorText(err));return false;}finally{setBusy(false);}}
   async function older(){if(!selected||!cursor)return;await action(async()=>{const result=await apiRequest<{items:Message[];next_cursor:string|null}>(`/leads/${selected}/messages?conversation_id=${encodeURIComponent(conversationId)}&cursor=${encodeURIComponent(cursor)}`);setMessages(old=>mergeMessages(old,result.items));setCursor(result.next_cursor);});}
   const current=user&&workspace?.attention.mode==='human'&&workspace.attention.assignee_id===user.id;
   const latest=!!workspace&&conversationId===workspace.conversation_id;
@@ -97,7 +101,8 @@ export function Contacts({onOpportunity}:{onOpportunity?:(id:string)=>void}){
   async function upload(file:File){if(!selected)return;await action(async()=>{const form=new FormData();form.append('file',file);const response=await fetch(`${apiBase()}/leads/${selected}/media`,{method:'POST',credentials:'include',headers:{'X-CSRF-Token':getToken()||''},body:form});const result=await response.json();if(!response.ok)throw new Error(result.message||'No se pudo adjuntar el archivo.');setAttachment(result);});}
   async function download(message:Message){if(!selected)return;await action(async()=>{const response=await fetch(`${apiBase()}/leads/${selected}/attachments/${message.id}?conversation_id=${encodeURIComponent(conversationId)}`,{credentials:'include'});if(!response.ok)throw new Error('El archivo no está disponible en WhatsApp.');const url=URL.createObjectURL(await response.blob());const anchor=document.createElement('a');anchor.href=url;anchor.download=message.presentation?.attachment?.filename||'Archivo';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
   async function openCalendar(){if(!selected)return;await action(async()=>{const items=await apiRequest<{id:string;label:string}[]>(`/leads/${selected}/calendars`);setCalendars(items);setCalendarId(items[0]?.id||'');});}
-  async function book(event:React.FormEvent){event.preventDefault();if(!selected||!workspace)return;const payload={start_time:zonedTime(meetingDate,workspace.calendar.timezone),duration:Number(duration),calendar_id:calendarId,email:meetingEmail};const signature=JSON.stringify(payload);if(meetingRequest.current?.signature!==signature)meetingRequest.current={signature,id:crypto.randomUUID()};await action(()=>apiRequest(`/leads/${selected}/meetings`,{method:'POST',body:JSON.stringify({...payload,request_id:meetingRequest.current!.id})}),'Reunión creada. Puedes copiar su enlace o prepararlo en el chat.');}
+  async function book(event:React.FormEvent){event.preventDefault();if(!selected||!workspace)return;const payload={start_time:zonedTime(meetingDate,workspace.calendar.timezone),duration:Number(duration),calendar_id:calendarId,email:meetingEmail};const signature=JSON.stringify(payload);if(meetingRequest.current?.signature!==signature)meetingRequest.current={signature,id:crypto.randomUUID()};if(await action(()=>apiRequest(`/leads/${selected}/meetings`,{method:'POST',body:JSON.stringify({...payload,request_id:meetingRequest.current!.id})}),'Reunión creada. Puedes copiar su enlace o prepararlo en el chat.')){setMeetingDate('');meetingRequest.current=null;}}
+  async function closeContact(){if(!await confirmDiscard())return;setSelected(null);}
 
   const stages=workspace?.configuration.stages||Object.entries(stageLabels).map(([id,label])=>({id,label}));
   const blocked=busy||!canWrite||(!workspace?.window_open&&!template)||(!template&&!draft.trim()&&!attachment)||(!!template&&parameters.filter(value=>value?.trim()).length!==templateCount);
@@ -112,7 +117,7 @@ export function Contacts({onOpportunity}:{onOpportunity?:(id:string)=>void}){
         <footer className={styles.pagination}><span>{total} contactos · Página {page} de {pages}</span><div><button aria-label="Página anterior de contactos" disabled={page<=1} onClick={()=>setPage(page-1)}><ChevronLeft size={17}/></button><button aria-label="Página siguiente de contactos" disabled={page>=pages} onClick={()=>setPage(page+1)}><ChevronRight size={17}/></button></div></footer>
       </div>
     </>:<>
-      <header className={styles.contactHeading}><button onClick={()=>setSelected(null)}><ArrowLeft size={17}/>Contactos</button><span className={styles.live}><i/> Historial sincronizado</span><Button variant="ghost" disabled={busy} onClick={()=>void action(async()=>{await refreshWorkspace(selected);if(conversationId){const page=await apiRequest<{items:Message[]}>(`/leads/${selected}/messages?conversation_id=${conversationId}`);setMessages(old=>mergeMessages(old,page.items));}})}><RefreshCw size={14}/>Actualizar</Button></header>
+      <header className={styles.contactHeading}><button onClick={()=>void closeContact()}><ArrowLeft size={17}/>Contactos</button><span className={styles.live}><i/> Historial sincronizado</span><Button variant="ghost" disabled={busy} onClick={()=>void action(async()=>{await refreshWorkspace(selected);if(conversationId){const page=await apiRequest<{items:Message[]}>(`/leads/${selected}/messages?conversation_id=${conversationId}`);setMessages(old=>mergeMessages(old,page.items));}})}><RefreshCw size={14}/>Actualizar</Button></header>
       {error&&<div className={styles.error} role="alert">{error}<button aria-label="Cerrar error" onClick={()=>setError('')}><X size={15}/></button></div>}{notice&&<div className={styles.notice} role="status"><Check size={15}/>{notice}<button aria-label="Cerrar aviso" onClick={()=>setNotice('')}><X size={15}/></button></div>}
       {!workspace?<p className={styles.empty} role="status">Cargando conversación e información comercial…</p>:<div className={styles.workspace}>
         <section className={styles.chat} aria-label="Conversación del contacto"><header className={styles.chatHeader}><ContactAvatar contact={workspace.contact}/><div><h3>{workspace.contact.name||'Contacto de WhatsApp'}</h3><p>+{workspace.contact.whatsapp_number.replace(/^\+/,'')} <span>· WhatsApp</span></p></div><button className={styles.infoToggle} onClick={()=>setMobileInfo(!mobileInfo)} aria-label="Mostrar información comercial"><MoreHorizontal size={21}/></button></header>
