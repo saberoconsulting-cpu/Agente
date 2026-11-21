@@ -91,14 +91,10 @@ function Hero({ go }: { go: PublicGo }) {
           <path fill="#071a33" d="M0 0H69C69 56 67 67 59 75C49 86 26 91 0 100Z" />
         </svg>
         <div aria-hidden="true" className="glow-pulse pointer-events-none absolute -left-20 top-1/3 h-72 w-72 rounded-full bg-sabero-electric/30 blur-3xl" />
-        <div className="relative z-10 flex h-full flex-col justify-start px-6 py-14 text-white sm:px-10 lg:w-[62%] lg:pl-12 lg:pr-0 lg:pt-16 xl:pl-16">
-          <Reveal>
-            <span className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/5 px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-blue-100">
-              <Sparkles className="h-3.5 w-3.5 text-sabero-cyan" />🇲🇽 🇨🇴 🇦🇷 Hecho para Latinoamérica
-            </span>
-          </Reveal>
+        <div className="relative z-10 flex h-full flex-col justify-start px-6 py-14 text-white sm:px-10 lg:w-[62%] lg:pl-12 lg:pr-0 lg:pt-8 xl:pl-16">
+
           <Reveal delay={0.1}>
-            <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-[-0.03em] sm:text-5xl">
+            <h1 className="text-4xl font-black leading-[1.05] tracking-[-0.03em] sm:text-5xl">
               Tu equipo de ventas con IA que <span className="text-sabero-cyan">cierra por WhatsApp</span>
             </h1>
           </Reveal>
