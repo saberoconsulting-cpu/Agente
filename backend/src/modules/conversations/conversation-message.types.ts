@@ -2,6 +2,8 @@ import type { StoredMessage } from '../platform/message-store.service';
 import type { MessagePresentation } from '../platform/message-store.service';
 
 export interface ConversationMessage {
+  delivery_status?: StoredMessage['deliveryStatus'];
+  delivery_status_at?: Date | string;
   id: string;
   company_id: string;
   conversation_id: string;
@@ -29,6 +31,8 @@ export function toConversationMessage(message: StoredMessage): ConversationMessa
     message_type: message.messageType,
     text_body: message.textBody,
     created_at: message.createdAt,
+    delivery_status: message.deliveryStatus,
+    delivery_status_at: message.deliveryStatusAt,
     ...(message.presentation ? { presentation: message.presentation } : {}),
     ...(message.inboundEventId === undefined ? {} : { inbound_event_id: message.inboundEventId }),
   };

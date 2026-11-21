@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import axios from 'axios';
 import { PlatformService } from './platform.service';
 

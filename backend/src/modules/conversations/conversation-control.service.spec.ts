@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { ConversationControlService } from './conversation-control.service';
 
 describe('Conversation attention ownership',()=>{

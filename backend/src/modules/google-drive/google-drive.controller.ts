@@ -10,15 +10,13 @@ export class GoogleDriveController {
 
   @Post('files')
   @Roles('owner', 'admin')
-  registerFile(@Body() body: RegisterDriveFileInput) {
-    return this.drive.registerAuthorizedFile({
-      ...body,
-      company_id: body.company_id || 'sabero',
-    });
+  registerFile(@TenantId() companyId: string, @Body() body: RegisterDriveFileInput) {
+    // La empresa sale de la sesión; nunca de lo que envía el navegador.
+    return this.drive.registerAuthorizedFile({ ...body, company_id: companyId });
   }
 
   @Get('files')
-  listFiles(@Query('company_id') companyId = 'sabero') {
+  listFiles(@TenantId() companyId: string) {
     return this.drive.listAuthorizedFiles(companyId);
   }
 

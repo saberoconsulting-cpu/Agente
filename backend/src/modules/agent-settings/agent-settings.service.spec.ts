@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { AgentSettingsService } from './agent-settings.service';
 describe('Optional company appointments', () => {
   it('persists an explicit false for the authenticated company', async () => {

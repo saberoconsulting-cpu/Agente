@@ -166,6 +166,7 @@ async function up(includeCrm = true) {
     await registry.control.query('GRANT SELECT,INSERT,UPDATE ON platform_access_requests TO sabero_platform_runtime');
     await registry.control.query('GRANT UPDATE(status,deleted_at) ON platform_companies TO sabero_platform_runtime');
     await registry.control.query('GRANT SELECT,INSERT,UPDATE ON platform_access_notifications TO sabero_platform_runtime');
+    await registry.control.query('GRANT SELECT,INSERT,UPDATE ON platform_access_provisioning TO sabero_platform_runtime');
     const priorRuntime=await readEnv(join(folder,'.env.runtime'));
     const notificationEnv=Object.fromEntries(['ACCESS_NOTIFICATIONS_ENABLED','BREVO_API_KEY','BREVO_SENDER_EMAIL','BREVO_SENDER_NAME','BREVO_REPLY_TO'].filter(key=>priorRuntime[key]).map(key=>[key,priorRuntime[key]]));
     const runtime = { ...platformEnv, ...notificationEnv, CONTROL_DATABASE_URL: `postgresql://sabero_platform_runtime:${secrets.runtime}@127.0.0.1:55432/sabero_control`,
@@ -201,6 +202,7 @@ async function up(includeCrm = true) {
     if (includeCrm) builds.push(runNode(['node_modules/@nestjs/cli/bin/nest.js', 'build'], crm, {}, 'crm-build'));
     await Promise.all(builds);
     await launch('platform', ['src/server.mjs'], folder, runtime);
+    await launch('provisioner', ['src/provisioner.mjs'], folder, platformEnv);
     await waitFor(`${urls.platform}/health`, 'platform');
     await runNode(['dist/scripts/create-admin.js'], agent, agentEnv, 'agent-owner');
     await launch('agent-api', ['dist/src/main.js'], agent, agentEnv);

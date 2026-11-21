@@ -1,6 +1,16 @@
+/// <reference types="jest" />
 import { SalesAgentService } from './sales-agent.service';
 
 describe('SalesAgentService conversation context', () => {
+  it.each([[false, 'products'], [false, 'services'], [true, 'services']])('keeps Sabero instructions out of another company (agenda=%s, mode=%s)', async (enabled, mode) => {
+    const { service, ai } = setup(enabled as boolean, mode as string);
+    await service.respondToMessage({ companyId: 'otra-empresa', message: 'Hola' });
+    const prompt = ai.complete.mock.calls[0][0].messages[0].content;
+    expect(prompt).not.toContain('Sabero Consulting');
+    expect(prompt).not.toContain('requerimientos de tu proyecto');
+    expect(prompt).not.toContain('Precios de proyectos a medida');
+    expect(prompt).toContain(enabled ? 'Esta empresa permite agenda' : 'Esta empresa no ofrece agenda');
+  });
   function setup(schedulingEnabled = false, pipelineMode = 'services') {
     const db = { query: jest.fn().mockImplementation(async (sql: string, _params?: unknown[]) => {
       if (sql.includes('from company_agent_settings')) return { rowCount: 1, rows: [{ agent_name: 'SABERO', language: 'es', tone: 'consultivo', system_rules: '', scheduling_enabled: schedulingEnabled, pipeline_mode: pipelineMode }] };

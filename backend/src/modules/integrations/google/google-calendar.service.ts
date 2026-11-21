@@ -5,6 +5,8 @@ import { google } from 'googleapis';
 import { DatabaseService } from '../../database/database.service';
 import { AuthTokenPayload } from '../../auth/token';
 import { GoogleOAuthTokenService } from './google-oauth-token.service';
+import { TenantService } from '../../tenancy/tenant.service';
+import { tenantContext } from '../../tenancy/tenant-context';
 
 export type CalendarAvailabilityInput = {
   companyId: string;
@@ -34,6 +36,7 @@ export class GoogleCalendarService {
     private readonly tokens: GoogleOAuthTokenService,
     private readonly config: ConfigService,
     private readonly db: DatabaseService,
+    private readonly tenants: TenantService,
   ) {}
 
   async getAuthUrl(user: AuthTokenPayload): Promise<string> {
@@ -54,19 +57,36 @@ export class GoogleCalendarService {
   }
 
   async exchangeCodeForTokens(code: string, state: string) {
-    const stateResult = await this.db.query<{ company_id: string }>(
-      `update google_oauth_states
-       set used_at = now()
-       where state_hash = $1 and used_at is null and expires_at > now()
-       returning company_id`,
-      [this.hashState(state)],
-    );
-    if (!stateResult.rowCount) throw new Error('Invalid or expired OAuth state');
-    const companyId = stateResult.rows[0].company_id;
-    const oauth2Client = this.tokens.createOAuthClient();
-    const { tokens } = await oauth2Client.getToken(code);
-    await this.tokens.saveTokens(companyId, tokens);
-    return tokens;
+    // OAuth state rows live in each tenant database; probe every active company.
+    const companies = await this.tenants.activeCompanyIds();
+    for (const companyId of companies.length ? companies : [this.tenants.defaultCompanyId]) {
+      const result = await this.exchangeInTenant(code, state, companyId);
+      if (result) return result;
+    }
+    throw new Error('Invalid or expired OAuth state');
+  }
+
+  private async exchangeInTenant(code: string, state: string, companyId: string) {
+    await this.tenants.ensure(companyId);
+    return tenantContext.run({ companyId }, async () => {
+      const stateResult = await this.db.query<{ company_id: string }>(
+        `update google_oauth_states
+         set used_at = now()
+         where state_hash = $1 and used_at is null and expires_at > now()
+         returning company_id`,
+        [this.hashState(state)],
+      );
+      if (!stateResult.rowCount) return null;
+      const resolvedCompanyId = stateResult.rows[0].company_id;
+      const oauth2Client = this.tokens.createOAuthClient();
+      const { tokens } = await oauth2Client.getToken(code);
+      // Sin refresh_token la conexión dejaría de funcionar en una hora.
+      if (!tokens.refresh_token) throw new Error('missing_refresh_token');
+      if (this.tokens.missingCalendarScopes(tokens).length) throw new Error('missing_calendar_permissions');
+      await this.tenants.ensure(resolvedCompanyId);
+      await tenantContext.run({ companyId: resolvedCompanyId }, () => this.tokens.saveTokens(resolvedCompanyId, tokens));
+      return tokens;
+    });
   }
 
   async getAvailability(input: CalendarAvailabilityInput) {

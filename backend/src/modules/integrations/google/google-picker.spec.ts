@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import {GoogleIntegrationController} from './google-integration.controller';
 describe('Google Picker configuration',()=>{
   function setup(overrides:Record<string,string>={}){
@@ -9,4 +10,8 @@ describe('Google Picker configuration',()=>{
   });
   it('rejects a project number left over from the previous OAuth application',()=>{expect(setup({GOOGLE_APP_ID:'829902045601'}).pickerConfig('company-a').enabled).toBe(false);});
   it('does not enable the selector when the browser key is missing',()=>{expect(setup({GOOGLE_PICKER_API_KEY:''}).pickerConfig('company-a').enabled).toBe(false);});
+  it('requests only file selection permissions, even when the connection also supports Calendar',()=>{
+    const controller = new GoogleIntegrationController({} as any,{getScopes:()=>['https://www.googleapis.com/auth/calendar.events','https://www.googleapis.com/auth/drive.file']} as any,{get:(key:string)=>({GOOGLE_CLIENT_ID:'1085978981794-client.apps.googleusercontent.com',GOOGLE_APP_ID:'1085978981794',GOOGLE_PICKER_API_KEY:'browser-key'}[key])} as any);
+    expect(controller.pickerConfig('company-a').scopes).toEqual(['https://www.googleapis.com/auth/drive.file']);
+  });
 });

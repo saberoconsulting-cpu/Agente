@@ -5,6 +5,8 @@ import { PlatformService } from './platform.service';
 
 export type MessagePresentation = { sender: 'ai' | 'human' | 'contact' | 'system'; sender_name?: string; attachment?: { id: string; kind: string; filename?: string; mime_type?: string } };
 export interface StoredMessage {
+  deliveryStatus?: 'sent' | 'delivered' | 'read' | 'failed';
+  deliveryStatusAt?: Date | string;
   id: string; companyId: string; conversationId: string; providerMessageId?: string | null;
   direction: string; messageType: string; textBody?: string | null; rawPayload?: unknown;
   inboundEventId?: string | null; createdAt?: Date | string;
@@ -33,6 +35,15 @@ interface PostgresMessageRow {
 export class MessageStore {
   constructor(private readonly platform: PlatformService, private readonly db: DatabaseService) {}
   get mongo() { return this.platform.mongo; }
+
+  async recordReceipt(companyId: string, providerMessageId: string, status: string, occurredAt: string) {
+    this.platform.assertCompany(companyId);
+    if (!['sent', 'delivered', 'read', 'failed'].includes(status) || !providerMessageId || !Number.isFinite(Date.parse(occurredAt))) return;
+    if (this.mongo) return this.platform.request('POST', '/v1/message-receipts', { providerMessageId, status, occurredAt });
+    await this.db.query(`insert into whatsapp_message_receipts(company_id,provider_message_id,status,occurred_at) values($1,$2,$3,$4)
+      on conflict(company_id,provider_message_id,status) do update set occurred_at=least(whatsapp_message_receipts.occurred_at,excluded.occurred_at)`,
+    [companyId, providerMessageId, status, occurredAt]);
+  }
 
   async inboundEvent(payload: unknown): Promise<string> {
     if (this.mongo) return (await this.platform.request<{ id: string }>('POST', '/v1/inbound-events', payload)).id;
@@ -63,6 +74,13 @@ export class MessageStore {
     return result.rows.map(row => ({ conversationId: row.conversation_id, count: Number(row.count), lastMessageAt: new Date(row.last_message_at), firstMessageAt: new Date(row.first_message_at), preview: row.preview, lastInboundAt: row.last_inbound_at ? new Date(row.last_inbound_at) : undefined,lastDirection:row.last_direction }));
   }
 
+  async activity(companyId: string): Promise<{ conversation_id: string; last_message_at: Date | string }[]> {
+    this.platform.assertCompany(companyId);
+    if (this.mongo) return (await this.platform.request<{ items: { conversation_id: string; last_message_at: string }[] }>('GET', '/v1/messages/activity')).items;
+    return (await this.db.query<{ conversation_id: string; last_message_at: Date }>(
+      'select conversation_id,max(created_at) as last_message_at from messages where company_id=$1 group by conversation_id', [companyId])).rows;
+  }
+
   async list(companyId: string, conversationId: string, limit: number, cursor?: string): Promise<StoredMessagePage> {
     this.platform.assertCompany(companyId);
     const size = Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 300) : 100;
@@ -78,11 +96,20 @@ export class MessageStore {
     const result = await this.db.query<PostgresMessageRow>(`select id,company_id,conversation_id,provider_message_id,direction,message_type,text_body,created_at,raw_payload,raw_payload->'_sabero' as presentation from messages
       where company_id=$1 and conversation_id=$2 and ($4::timestamptz is null or (created_at,id)<($4::timestamptz,$5::uuid)) order by created_at desc,id desc limit $3`, [companyId, conversationId, size + 1, before?.createdAt || null, before?.id || null]);
     const rows = result.rows.slice(0, size);
+    const ids = rows.filter(row => row.direction === 'outbound' && row.provider_message_id).map(row => row.provider_message_id);
+    const receipts = ids.length ? (await this.db.query<{ provider_message_id: string; status: StoredMessage['deliveryStatus']; occurred_at: Date }>(
+      `select distinct on (provider_message_id) provider_message_id,status,occurred_at from whatsapp_message_receipts
+       where company_id=$1 and provider_message_id=any($2::text[])
+       order by provider_message_id,case status when 'read' then 4 when 'delivered' then 3 when 'failed' then 2 else 1 end desc`, [companyId, ids])).rows : [];
+    const receiptById = new Map(receipts.map(receipt => [receipt.provider_message_id, receipt]));
     const last = rows[rows.length - 1];
     const nextCursor = result.rows.length > size && last ? Buffer.from(JSON.stringify({ createdAt: last.created_at, id: last.id })).toString('base64url') : null;
     return { items: rows.reverse().map(row => ({ id: row.id, companyId: row.company_id,
       conversationId: row.conversation_id, providerMessageId: row.provider_message_id, direction: row.direction,
-      messageType: row.message_type, textBody: row.text_body, createdAt: row.created_at, presentation: row.presentation || this.legacyPresentation(row.raw_payload,row.direction) })), nextCursor };
+      messageType: row.message_type, textBody: row.text_body, createdAt: row.created_at,
+      deliveryStatus: receiptById.get(row.provider_message_id!)?.status,
+      deliveryStatusAt: receiptById.get(row.provider_message_id!)?.occurred_at,
+      presentation: row.presentation || this.legacyPresentation(row.raw_payload,row.direction) })), nextCursor };
   }
 
   private legacyPresentation(raw:any,direction:string):MessagePresentation|undefined{

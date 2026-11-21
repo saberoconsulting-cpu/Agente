@@ -3,9 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { MongoClient } from 'mongodb';
 import { Registry } from './registry.mjs';
 import { upsertContact } from './contacts.mjs';
-import { initializeMessages, listMessages, saveMessage, presentMessage } from './messages.mjs';
-import { pageLimit } from './domain.mjs';
-import { adminAuthorized, companyOverview } from './overview.mjs';
+import { initializeMessages, listMessages, saveMessage, presentMessage, saveReceipt } from './messages.mjs';
+import { decrypt, pageLimit } from './domain.mjs';
+import { adminAuthorized, companyOverview, invalidateCompanyOverview } from './overview.mjs';
 import { listRequests, reviewRequest, submitRequest } from './access-requests.mjs';
 import { dispatchNotifications,retryNotification } from './access-notifications.mjs';
 import {changeCompanyAccess} from './company-access.mjs';
@@ -45,16 +45,41 @@ export function createHandler(registry, mongo) {
         }
         return send(404, { error: 'Not found' });
       }
+      if (url.pathname.startsWith('/v1/admin/tenants')) {
+        const credential = req.headers.authorization?.replace(/^Bearer /, '');
+        if (!adminAuthorized(registry.env.PLATFORM_ADMIN_TOKEN, credential)) return send(403, { error: 'Platform administrator required' });
+        if (url.pathname === '/v1/admin/tenants/resolve-email' && req.method === 'POST') {
+          const email = String(body?.email || '').trim().toLowerCase();
+          if (!email) return send(400, { error: 'email is required' });
+          const { rows } = await registry.control.query(
+            "SELECT company_id FROM platform_access_requests WHERE lower(email)=lower($1) AND status='active' AND deleted_at IS NULL ORDER BY activated_at DESC LIMIT 1",
+            [email]);
+          return send(200, { company_id: rows[0]?.company_id || null });
+        }
+        const tenantMatch = url.pathname.match(/^\/v1\/admin\/tenants\/([a-z0-9][a-z0-9-]{0,62})\/connection$/);
+        if (tenantMatch && req.method === 'GET') {
+          const { rows } = await registry.control.query(
+            "SELECT id,name,status,sector,database_name,mongo_database,encrypted_connection FROM platform_companies WHERE id=$1 AND deleted_at IS NULL",
+            [tenantMatch[1]]);
+          const company = rows[0];
+          if (!company) return send(404, { error: 'Company not found' });
+          if (company.status !== 'active') return send(409, { error: 'Company is not active' });
+          const { encrypted_connection, ...rest } = company;
+          return send(200, { ...rest, database_url: decrypt(encrypted_connection, registry.env.PLATFORM_ENCRYPTION_KEY) });
+        }
+        return send(404, { error: 'Not found' });
+      }
       if (url.pathname.startsWith('/v1/admin/companies') && ['GET','DELETE','POST'].includes(req.method)) {
         const credential = req.headers.authorization?.replace(/^Bearer /, '');
         if (!adminAuthorized(registry.env.PLATFORM_ADMIN_TOKEN, credential)) return send(403, { error: 'Platform administrator required' });
         if(url.pathname === '/v1/admin/companies' && req.method === 'GET') return send(200, await companyOverview(registry));
         const accessMatch=url.pathname.match(/^\/v1\/admin\/companies\/([a-z0-9][a-z0-9-]{0,62})\/access$/);
-        if(accessMatch&&req.method==='POST')return send(200,await changeCompanyAccess(registry,accessMatch[1],body));
+        if(accessMatch&&req.method==='POST'){const result=await changeCompanyAccess(registry,accessMatch[1],body);invalidateCompanyOverview(registry);return send(200,result);}
         const match=url.pathname.match(/^\/v1\/admin\/companies\/([a-z0-9][a-z0-9-]{0,62})$/);
         if(match && req.method === 'DELETE') {
           if(!registry.env.PLATFORM_ADMIN_COMPANY_ID || match[1]===registry.env.PLATFORM_ADMIN_COMPANY_ID) return send(403,{error:'Administrator company is protected'});
           const result=await registry.control.query("UPDATE platform_companies SET status='suspended',deleted_at=now() WHERE id=$1 AND deleted_at IS NULL RETURNING id",[match[1]]);
+          if(result.rowCount)invalidateCompanyOverview(registry);
           return send(result.rowCount?200:404,result.rowCount?{removed:true}:{error:'Company not found'});
         }
         return send(404,{error:'Not found'});
@@ -101,6 +126,17 @@ export function createHandler(registry, mongo) {
         return send(200, await saveMessage(db, body));
       }
       if (url.pathname === '/v1/messages' && req.method === 'GET') return send(200, await listMessages(db, Object.fromEntries(url.searchParams)));
+      if (url.pathname === '/v1/messages/activity' && req.method === 'GET') {
+        const items = await db.collection('messages').aggregate([
+          { $group: { _id: '$conversationId', last_message_at: { $max: '$createdAt' } } },
+          { $project: { _id: 0, conversation_id: '$_id', last_message_at: 1 } },
+        ]).toArray();
+        return send(200, { items });
+      }
+      if (url.pathname === '/v1/message-receipts' && req.method === 'POST') {
+        if (company.product !== 'agent') return send(403, { error: 'Only agent can record receipts' });
+        return send(200, await saveReceipt(db, body));
+      }
       if(url.pathname==='/v1/message-attachment'&&req.method==='GET'){
         const conversationId=url.searchParams.get('conversationId');const messageId=url.searchParams.get('messageId');
         if(!/^[a-f0-9-]{36}$/i.test(messageId||'')||!/^[a-f0-9-]{36}$/i.test(conversationId||''))return send(400,{error:'Invalid identity'});

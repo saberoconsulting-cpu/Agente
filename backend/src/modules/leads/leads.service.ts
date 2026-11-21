@@ -13,10 +13,17 @@ export class LeadsService {
 
   async roster(companyId:string,filters:{page?:string;search?:string;stage?:string;from?:string;to?:string;assignee?:string}){
     for(const date of [filters.from,filters.to])if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date))throw new BadRequestException('Fecha de filtro no válida');
-    const page=Math.max(1,Math.floor(Number(filters.page)||1));
-    const result=await this.leads.list(companyId,25,{...filters,search:filters.search?.slice(0,200),offset:(page-1)*25});
+    const size=10;
+    let page=Number.isFinite(Number(filters.page))?Math.max(1,Math.floor(Number(filters.page)||1)):1;
+    const options={...filters,search:filters.search?.slice(0,200)};
+    let result=await this.leads.list(companyId,size,{...options,offset:(page-1)*size});
+    if(!result.rows.length&&page>1){
+      result=await this.leads.list(companyId,size,{...options,offset:0});
+      page=Math.max(1,Math.ceil((result.rows[0]?.total_count||0)/size));
+      if(page>1)result=await this.leads.list(companyId,size,{...options,offset:(page-1)*size});
+    }
     const total=result.rows[0]?.total_count||0;
-    return {items:result.rows,total,page,pages:Math.max(1,Math.ceil(total/25))};
+    return {items:result.rows,total,page,pages:Math.max(1,Math.ceil(total/size))};
   }
 
   async get(companyId: string, id: string) {

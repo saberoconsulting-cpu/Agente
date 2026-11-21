@@ -6,13 +6,23 @@ export function adminAuthorized(expected, supplied) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+const ROW_LIMIT = 500;
+const CONCURRENCY = 5;
+const CACHE_MS = Number(process.env.OVERVIEW_CACHE_MS ?? 20000);
+const cache = new WeakMap();
+
+export function invalidateCompanyOverview(registry) {
+  cache.delete(registry);
+}
+
 export async function companyOverview(registry) {
+  const hit = cache.get(registry);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
   const { rows } = await registry.control.query(`SELECT c.*,
     coalesce((SELECT json_agg(product) FROM platform_products WHERE company_id=c.id AND status='active'),'[]') AS products
-    FROM platform_companies c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC LIMIT 100`);
-  const items = [];
-  // Sequential to avoid opening hundreds of connections on a small server.
-  for (const company of rows) {
+    FROM platform_companies c WHERE c.deleted_at IS NULL ORDER BY c.created_at DESC LIMIT ${ROW_LIMIT}`);
+  const items = new Array(rows.length);
+  const load = async (company, index) => {
     const item = { id: company.id, name: company.name, sector: company.sector, status: company.status,
       products: company.products, created_at: company.created_at, metrics: null, contacts: [], events: [], activity: [] };
     if (company.status === 'active' && company.products.includes('agent')) {
@@ -39,7 +49,13 @@ export async function companyOverview(registry) {
           FROM days d LEFT JOIN activity a ON a.day=d.day ORDER BY d.day`,[company.id])).rows;
       } catch { item.metrics = null; item.activity=[]; }
     }
-    items.push(item);
+    items[index] = item;
+  };
+  // Bounded parallelism: each company uses its own pool, but a small server should not open hundreds at once.
+  for (let i = 0; i < rows.length; i += CONCURRENCY) {
+    await Promise.all(rows.slice(i, i + CONCURRENCY).map((company, offset) => load(company, i + offset)));
   }
-  return { items, limit: 100, generated_at: new Date().toISOString() };
+  const value = { items, limit: ROW_LIMIT, generated_at: new Date().toISOString() };
+  cache.set(registry, { at: Date.now(), value });
+  return value;
 }

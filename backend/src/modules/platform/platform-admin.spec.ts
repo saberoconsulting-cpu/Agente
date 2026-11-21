@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { ConfigService } from '@nestjs/config';
 import { PlatformService } from './platform.service';
 import { DatabaseService } from '../database/database.service';

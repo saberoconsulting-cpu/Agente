@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import {accessRequestPhone} from './access-request-phone';
 describe('International business phones',()=>{
   it.each([

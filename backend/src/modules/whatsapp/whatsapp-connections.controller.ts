@@ -34,6 +34,12 @@ export class WhatsappConnectionsController {
     return this.connections.listForAuthorization(user);
   }
 
+  @Post(':id/register')
+  @Roles('owner')
+  register(@CurrentUser() user: AuthTokenPayload, @Param('id') id: string, @Body() body: { pin?: unknown }) {
+    return this.connections.registerPhone(user, id, body.pin);
+  }
+
   @Delete(':id')
   @Roles('owner')
   revoke(

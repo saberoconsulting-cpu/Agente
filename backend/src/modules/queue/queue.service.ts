@@ -11,7 +11,17 @@ export class QueueService {
 
   async enqueue(type: QueueJobType, companyId: string, payload: Record<string, unknown> = {}, runAt = new Date(), dedupeKey?: string) {
     const key = dedupeKey || `${type}:${runAt.toISOString()}`;
-    try { await this.prisma.jobQueue.create({ data: { jobType: type, companyId, payload: payload as Prisma.InputJsonValue, runAt, dedupeKey: key } }); } catch (error) { if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error; }
+    try {
+      await this.prisma.jobQueue.create({ data: { jobType: type, companyId, payload: payload as Prisma.InputJsonValue, runAt, dedupeKey: key } });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002')) throw error;
+      // Legacy terminal jobs may still own the dedupe key. A fresh explicit
+      // request must be able to retry them without disturbing active work.
+      await this.prisma.jobQueue.updateMany({
+        where: { jobType: type, companyId, dedupeKey: key, status: { in: ['dead', 'completed'] } },
+        data: { status: 'pending', attempts: 0, payload: payload as Prisma.InputJsonValue, runAt, errorMessage: null, lockedAt: null, lockExpiresAt: null, completedAt: null, updatedAt: new Date() },
+      });
+    }
   }
 
   async claim(limit = 10) {
@@ -24,6 +34,6 @@ export class QueueService {
 
   async fail(id: string, attempts: number, error: string) {
     const terminal = attempts >= 5;
-    await this.prisma.jobQueue.update({ where: { id }, data: { status: terminal ? 'dead' : 'pending', errorMessage: error.slice(0, 2000), runAt: new Date(Date.now() + Math.min(2 ** attempts, 60) * 60_000), lockedAt: null, lockExpiresAt: null, updatedAt: new Date() } });
+    await this.prisma.jobQueue.update({ where: { id }, data: { status: terminal ? 'dead' : 'pending', ...(terminal ? { dedupeKey: null } : {}), errorMessage: error.slice(0, 2000), runAt: new Date(Date.now() + Math.min(2 ** attempts, 60) * 60_000), lockedAt: null, lockExpiresAt: null, updatedAt: new Date() } });
   }
 }

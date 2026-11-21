@@ -103,6 +103,25 @@ sobre instalaciones existentes sin revisar puertos y volúmenes. Necesita `POSTG
 `MONGO_PASSWORD` y credenciales coherentes con los archivos de entorno. No crea automáticamente
 el rol de ejecución. PostgreSQL y MongoDB quedan publicados solo en loopback para administración.
 
+## Aprobación automática de solicitudes
+
+Cuando un administrador elige **Crear empresa nueva automáticamente** al habilitar una
+solicitud aprobada, la plataforma encola un trabajo en `platform_access_provisioning`.
+El proceso `npm run provisioner` (se lanza junto al resto en `local:up`) lo recoge y:
+
+1. Deriva un identificador único del nombre comercial y crea la empresa con su base,
+   rol, esquemas y colección de mensajes (`createTenant`).
+2. Activa el producto `agent` con sus migraciones y exporta la configuración
+   (`activateTenantProducts`, los mismos pasos de `admin.mjs`).
+3. Crea el usuario `owner` con la contraseña registrada por la empresa
+   (`ensureOwnerUser`), marca la solicitud como `active` y encola el correo de aviso.
+
+El aprovisionador necesita el entorno administrativo (`.env` con
+`PROVISION_DATABASE_URL`); el servicio HTTP sigue sin recibirla. Si un trabajo falla
+queda en `status='failed'` con el error; al volver a pulsar «Habilitar acceso» se
+reintenta. Los contenedores de la empresa se siguen levantando con el comando
+`docker compose` de la sección siguiente.
+
 ## Empresa nueva y activación posterior
 
 Desde esta carpeta:

@@ -32,6 +32,16 @@ services:
     expose: ["3010"]
     depends_on: [postgres, mongo]
     restart: unless-stopped
+  provisioner:
+    build:
+      context: ..
+      dockerfile: platform/Dockerfile.provisioner
+    env_file: .env.provisioner
+    volumes:
+      - ../platform/generated:/repo/platform/generated
+    networks: [sabero]
+    depends_on: [postgres, mongo]
+    restart: unless-stopped
 networks:
   sabero:
     name: sabero

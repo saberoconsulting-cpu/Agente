@@ -5,8 +5,10 @@ RUN npm ci
 
 FROM node:22-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_API_PROXY_TARGET=http://backend:3001
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_OPTIONS=--max-old-space-size=1024
+ENV NEXT_PUBLIC_API_PROXY_TARGET=$NEXT_PUBLIC_API_PROXY_TARGET
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

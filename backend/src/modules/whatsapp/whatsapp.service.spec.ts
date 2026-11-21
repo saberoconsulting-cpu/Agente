@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { WhatsappService } from './whatsapp.service';
 
 describe('WhatsappService connection resolution', () => {
@@ -16,6 +17,7 @@ describe('WhatsappService connection resolution', () => {
       findActiveByPhoneNumberId: jest.fn().mockResolvedValue(connection || null),
       findActiveForCompany: jest.fn().mockResolvedValue(connection || null),
       decryptAccessToken: jest.fn().mockReturnValue('tenant-token'),
+      serverNumberAllowed: jest.fn().mockReturnValue(true),
     };
     const service = new WhatsappService(
       config as any,
@@ -26,6 +28,7 @@ describe('WhatsappService connection resolution', () => {
       connections as any,
       {} as any,
       { managed: false, assertCompany: jest.fn() } as any,
+      { ensure: jest.fn(async () => undefined), isRouted: () => false, defaultCompanyId: 'sabero' } as any,
     );
 
     return { service, config, connections };
@@ -41,10 +44,15 @@ describe('WhatsappService connection resolution', () => {
     expect(connections.findActiveByPhoneNumberId).toHaveBeenCalledWith('phone-1');
   });
 
-  it('falls back to the legacy global company when no connection matches', async () => {
+  it('rejects an unknown number instead of routing it to the default company', async () => {
     const { service } = createService();
 
-    await expect((service as any).resolveCompanyId('unknown-phone')).resolves.toBe('sabero');
+    await expect((service as any).resolveCompanyId('unknown-phone')).rejects.toThrow('Unknown WhatsApp phone number');
+  });
+
+  it('recognizes the explicitly configured server number', async () => {
+    const { service } = createService();
+    await expect((service as any).resolveCompanyId('global-phone')).resolves.toBe('sabero');
   });
 
   it('uses tenant credentials when a company has an active connection', async () => {
@@ -61,13 +69,20 @@ describe('WhatsappService connection resolution', () => {
     expect(connections.decryptAccessToken).toHaveBeenCalled();
   });
 
-  it('falls back to legacy global credentials when a tenant connection is absent', async () => {
+  it('uses the server number for the platform owner company without its own connection', async () => {
     const { service } = createService();
 
-    await expect((service as any).resolveSendCredentials('tenant-1')).resolves.toEqual({
+    await expect((service as any).resolveSendCredentials('sabero')).resolves.toEqual({
       token: 'global-token',
       phoneNumberId: 'global-phone',
     });
+  });
+
+  it('never sends a client company through the platform number', async () => {
+    const { service, connections } = createService();
+    connections.serverNumberAllowed.mockReturnValue(false);
+
+    await expect((service as any).resolveSendCredentials('tenant-1')).rejects.toThrow('aún no vinculó su número');
   });
 
   it('accepts WHATSAPP_ACCESS_TOKEN when META_ACCESS_TOKEN is absent', async () => {
@@ -88,7 +103,7 @@ describe('WhatsappService connection resolution', () => {
     (service as any).salesAgent = agent;
     const send = jest.spyOn(service as any, 'sendText').mockResolvedValue(undefined);
     await (service as any).processInboundMessage(
-      { id: 'inbound-1', from: '51900000000', text: { body: 'Hola' } },
+      { id: 'inbound-1', phoneNumberId: 'global-phone', from: '51900000000', text: { body: 'Hola' } },
       { conversationId: 'conversation-1', leadId: 'lead-1' },
     );
     expect(agent.respondToMessage).toHaveBeenCalledWith({ companyId: 'sabero', message: 'Hola',
@@ -101,7 +116,7 @@ describe('WhatsappService connection resolution', () => {
     jest.spyOn(service as any, 'saveInboundEvent').mockResolvedValue('event-1');
     jest.spyOn(service as any, 'upsertInboundMessage').mockResolvedValue({ inserted: false });
     const process = jest.spyOn(service as any, 'processInboundMessage').mockResolvedValue(undefined);
-    await service.receiveWebhook({ entry: [{ changes: [{ value: { messages: [
+    await service.receiveWebhook({ entry: [{ changes: [{ value: { metadata: { phone_number_id: 'global-phone' }, messages: [
       { id: 'duplicate', from: '51900000000', type: 'text', text: { body: 'Hola' } },
     ] } }] }] });
     expect(process).not.toHaveBeenCalled();
@@ -112,7 +127,7 @@ describe('WhatsappService connection resolution', () => {
     const agent={respondToMessage:jest.fn()};(service as any).salesAgent=agent;
     (service as any).control={get:jest.fn().mockResolvedValue({mode:'human',assignee_id:'advisor'})};
     const send=jest.spyOn(service as any,'sendText').mockResolvedValue(undefined);
-    await (service as any).processInboundMessage({id:'inbound',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
+    await (service as any).processInboundMessage({id:'inbound',phoneNumberId:'global-phone',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
     expect(agent.respondToMessage).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
   });
   it('checks ownership again before sending an AI response that was already being generated',async()=>{
@@ -121,7 +136,7 @@ describe('WhatsappService connection resolution', () => {
     const finalCheck=jest.fn().mockResolvedValue(undefined);
     (service as any).control={get:jest.fn().mockResolvedValue({mode:'auto',version:'before-takeover'}),sendIfAutomatic:finalCheck};
     const send=jest.spyOn(service as any,'sendText').mockResolvedValue(undefined);
-    await (service as any).processInboundMessage({id:'inbound',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
+    await (service as any).processInboundMessage({id:'inbound',phoneNumberId:'global-phone',from:'51900000000',text:{body:'Hola'}},{conversationId:'chat',leadId:'lead'});
     expect(finalCheck).toHaveBeenCalledWith('sabero','chat','before-takeover',expect.any(Function));expect(send).not.toHaveBeenCalled();
   });
 });

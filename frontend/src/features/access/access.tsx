@@ -6,6 +6,7 @@ import { CheckCircle2 } from 'lucide-react';
 import { apiRequest, SessionUser } from '@/lib/api';
 import { Button, Panel } from '@/components/ui';
 import { useUnsavedChanges } from '@/components/action-confirmation';
+import { PasswordChange } from '@/components/password-change';
 
 export function Access({ companyId, users, reload, pushLog }: { companyId: string; users: SessionUser[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [email, setEmail] = useState('');
@@ -23,27 +24,29 @@ export function Access({ companyId, users, reload, pushLog }: { companyId: strin
   }
   const pagination=usePagination(users);
   return (
-    <Panel>
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Multiempresa</p>
-      <h2 className="mt-2 text-3xl font-black text-sabero-navy">Crear accesos por correo</h2>
+    <div className="grid gap-6"><PasswordChange/><Panel>
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">EQUIPO DE LA EMPRESA</p>
+      <h2 className="mt-2 text-3xl font-black text-sabero-navy">Crear un acceso</h2>
+      <p className="mt-2 text-sm text-slate-500">Añade una persona para administrar el agente de tu empresa.</p>
       <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-        <input className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-sabero-electric" placeholder="correo@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-sabero-electric" placeholder="Contrasena segura" value={password} onChange={(e) => setPassword(e.target.value)} />
-        <Button variant="danger" onClick={createUser}>Crear acceso</Button>
+        <label className="grid gap-2 text-sm font-semibold text-slate-600">Correo empresarial<input type="email" autoComplete="off" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-sabero-electric" placeholder="correo@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <label className="grid gap-2 text-sm font-semibold text-slate-600">Contraseña<input type="password" autoComplete="new-password" className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-sabero-electric" placeholder="Contraseña segura" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+        <Button className="self-end" onClick={createUser}>Crear acceso</Button>
       </div>
-      <div className="mt-6 grid gap-3">
+      <div className="mt-8 border-t border-slate-200 pt-6"><h3 className="font-semibold text-sabero-navy">Personas con acceso</h3><p className="mt-2 text-sm text-slate-500">{users.length === 1 ? '1 persona registrada en esta empresa.' : `${users.length} personas registradas en esta empresa.`}</p></div>
+      <div className="mt-5 grid gap-3">
         {pagination.items.map((item) => (
           <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
             <div>
               <p className="font-black text-sabero-navy">{item.email}</p>
-              <p className="text-sm text-slate-500">{item.role}</p>
+              <p className="text-sm text-slate-500">{{owner:'Propietario',admin:'Administrador'}[item.role] || item.role}</p>
             </div>
             <div className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-600"/><DeleteRecordButton resource="users" id={item.id} name={item.email} reload={()=>reload(companyId)} protectedRecord={item.role==='owner'}/></div>
           </div>
         ))}
       </div>
       <Pagination {...pagination} label="accesos"/>
-    </Panel>
+    </Panel></div>
   );
 }
 

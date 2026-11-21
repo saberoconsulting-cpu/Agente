@@ -5,11 +5,44 @@ import { CurrentUser } from '../security/current-user.decorator';
 import { Roles } from '../security/roles.decorator';
 import { AuthService } from './auth.service';
 import { AuthTokenPayload } from './token';
+import { PasswordRecoveryService } from './password-recovery.service';
 
 @Controller('auth')
 export class AuthController {
   private readonly loginAttempts = new Map<string, { count: number; resetAt: number }>();
-  constructor(private readonly auth: AuthService) { }
+  constructor(private readonly auth: AuthService, private readonly recovery: PasswordRecoveryService) { }
+
+  @PublicRoute()
+  @Post('password/request')
+  requestPassword(@Body() body: { email: string }, @Req() request: Request) {
+    this.limitPasswordRequests(`password-request:${request.ip}`);
+    return this.recovery.request(body.email);
+  }
+
+  @PublicRoute()
+  @Post('password/reset')
+  resetPassword(@Body() body: { email: string; code: string; password: string }, @Req() request: Request) {
+    this.limitPasswordRequests(`password-reset:${request.ip}`);
+    return this.recovery.reset(body.email, body.code, body.password);
+  }
+
+  @Post('password/change')
+  async changePassword(@CurrentUser() user: AuthTokenPayload, @Body() body: { current_password: string; password: string }, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    this.limitPasswordRequests(`password-change:${user.sub}:${request.ip}`);
+    const result = await this.recovery.change(user, body.current_password, body.password);
+    for (const name of ['sabero_access', 'sabero_refresh', 'sabero_csrf']) response.clearCookie(name, { path: '/' });
+    return result;
+  }
+
+  private limitPasswordRequests(key: string) {
+    if (this.loginAttempts.size > 5000) {
+      for (const [entry, value] of this.loginAttempts) if (value.resetAt <= Date.now()) this.loginAttempts.delete(entry);
+      if (this.loginAttempts.size > 10000) throw new HttpException('Inténtalo de nuevo más tarde.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    const record = this.loginAttempts.get(key);
+    if (record && record.resetAt > Date.now() && record.count >= 5) throw new HttpException('Demasiados intentos. Espera quince minutos antes de volver a intentarlo.', HttpStatus.TOO_MANY_REQUESTS);
+    this.recordFailedLogin(key);
+  }
 
   @PublicRoute()
   @Post('login')

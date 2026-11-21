@@ -71,7 +71,7 @@ export class GoogleDriveService {
     );
 
     const file = result.rows[0];
-    await this.queue.enqueue('drive.sync', file.company_id, { file_id: file.id }, new Date(), 'drive-sync');
+    await this.queue.enqueue('drive.sync', file.company_id, { file_id: file.id }, new Date(), `drive-file:${file.id}`);
     return file;
   }
 
@@ -95,7 +95,13 @@ export class GoogleDriveService {
   }
 
   async syncAuthorizedFile(companyId: string, id: string) {
+    return this.db.conversationLock(companyId, `drive-file:${id}`, () => this.syncLockedFile(companyId, id));
+  }
+
+  private async syncLockedFile(companyId: string, id: string) {
     const file = await this.getAuthorizedFile(companyId, id);
+    // A queued job may outlive the user's authorization. Never recreate removed knowledge.
+    if (!file) return { ok: true, status: 'deleted' };
     const drive = google.drive({
       version: 'v3',
       auth: await this.googleTokens.getAuthorizedClient(companyId),
@@ -182,7 +188,7 @@ export class GoogleDriveService {
       `select *
        from google_drive_files
        where company_id = $1 and trashed = false
-       order by coalesce(last_synced_at, created_at) asc
+       order by (sync_status = 'pending') desc, coalesce(last_synced_at, created_at) asc
        limit $2`,
       [companyId, Math.min(Math.max(batchSize, 1), 50)],
     );
@@ -271,7 +277,7 @@ export class GoogleDriveService {
     );
   }
 
-  private async getAuthorizedFile(companyId: string, id: string): Promise<DriveFileRow> {
+  private async getAuthorizedFile(companyId: string, id: string): Promise<DriveFileRow | null> {
     const result = await this.db.query<DriveFileRow>(
       `select *
        from google_drive_files
@@ -279,11 +285,7 @@ export class GoogleDriveService {
       [companyId, id],
     );
 
-    if (!result.rowCount) {
-      throw new Error('Authorized Drive file not found');
-    }
-
-    return result.rows[0];
+    return result.rows[0] || null;
   }
 
   private async extractTextFromDriveFile(
@@ -333,7 +335,7 @@ export class GoogleDriveService {
 
   private async touchCheckedFile(id: string) {
     await this.db.query(
-      `update google_drive_files set updated_at = now() where id = $1`,
+      `update google_drive_files set updated_at = now(), last_synced_at = now() where id = $1`,
       [id],
     );
   }

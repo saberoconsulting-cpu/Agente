@@ -6,22 +6,33 @@ import { Cloud, FileText, RefreshCw } from 'lucide-react';
 import { apiRequest } from '@/lib/api';
 import type { DriveFile } from '@/lib/types';
 import { Button, Panel, StatusPill } from '@/components/ui';
-import type { PickerConfig, PickerDocument, TokenClient } from '@/lib/integrations';
+import type { PickerConfig, PickerDocument } from '@/lib/integrations';
 import { useUnsavedChanges } from '@/components/action-confirmation';
 
 export function Knowledge({ companyId, files, reload, pushLog }: { companyId: string; files: DriveFile[]; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [pickerConfig, setPickerConfig] = useState<PickerConfig | null>(null);
   const [pickerReady, setPickerReady] = useState(false);
   const [pickerBusy, setPickerBusy] = useState(false);
-  const [accessToken, setAccessToken] = useState('');
-  const [tokenClient, setTokenClient] = useState<TokenClient | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [dataConsent,setDataConsent] = useState(false);
   const [pickerError,setPickerError] = useState('');
   const [pickerAttempt,setPickerAttempt] = useState(0);
   useUnsavedChanges('drive-connection-in-progress',pickerBusy);
 
+  useEffect(() => {
+    if (!files.some(file => file.sync_status === 'pending' || file.sync_status === 'syncing')) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try { await reload(companyId); } catch { /* Retry transient connection failures on the next poll. */ }
+      if (!cancelled) timer = setTimeout(refresh, 3000);
+    };
+    timer = setTimeout(refresh, 3000);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [companyId, files, reload]);
+
   const handlePickerSelection = useCallback(async (data: { action: string; docs?: PickerDocument[] }) => {
+    if (data.action !== window.google.picker.Action.PICKED && data.action !== window.google.picker.Action.CANCEL) return;
     if (data.action !== window.google.picker.Action.PICKED) {
       setPickerBusy(false);
       setPickerError('El selector de Google Drive se cerró antes de elegir documentos. No se guardó ningún cambio. Inténtalo de nuevo cuando estés listo.');
@@ -74,7 +85,7 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
       .setVisible(true);
   }, [handlePickerSelection]);
 
-  const waitForGoogleLibraries = useCallback((config: PickerConfig, cancelledRef: { current: boolean }) => {
+  const waitForGoogleLibraries = useCallback((cancelledRef: { current: boolean }) => {
     const timeout=window.setTimeout(()=>{
       window.clearInterval(timer);
       if(!cancelledRef.current)setPickerError('No se pudo cargar el selector de Google. Revisa tu conexión o los bloqueadores del navegador y vuelve a intentarlo.');
@@ -85,43 +96,24 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
         return;
       }
 
-      if (!window.google?.accounts?.oauth2 || !window.gapi) return;
+      if (!window.gapi) return;
 
       window.clearInterval(timer);
       window.gapi.load('picker', () => {
         if(cancelledRef.current)return;
         window.clearTimeout(timeout);
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: config.client_id,
-          scope: config.scopes.join(' '),
-          callback: (response: { access_token?: string; error?: string }) => {
-            if (response.error || !response.access_token) {
-              pushLog(`Google Picker no entrego token: ${response.error || 'sin token'}.`);
-              setPickerBusy(false);
-              setPickerError('Google no autorizó el acceso a Drive. Vuelve a intentarlo con la cuenta de tu empresa.');
-              return;
-            }
-
-            setAccessToken(response.access_token);
-            setPickerError('');
-            openPicker(config, response.access_token);
-          },
-          error_callback:()=>{setPickerBusy(false);setPickerError('Google cerró la autorización antes de completarla. No se guardó ningún cambio. Inténtalo de nuevo.');},
-        });
-
-        setTokenClient(client);
         setPickerError('');
         setPickerReady(true);
         pushLog('Google Picker listo para seleccionar documentos.');
       });
     }, 200);
     return ()=>{window.clearInterval(timer);window.clearTimeout(timeout);};
-  }, [pushLog, openPicker]);
+  }, [pushLog]);
 
   useEffect(() => {
     const cancelledRef = { current: false };
     let stopWaiting:(()=>void)|undefined;
-    setPickerConfig(null);setPickerError('');setPickerReady(false);setTokenClient(null);setAccessToken('');
+    setPickerConfig(null);setPickerError('');setPickerReady(false);
 
     async function loadPicker() {
       const config = await apiRequest<PickerConfig>(`/integrations/google/picker-config?company_id=${companyId}`,{cache:'no-store'});
@@ -133,10 +125,10 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
         return;
       }
 
-      stopWaiting=waitForGoogleLibraries(config, cancelledRef);
+      stopWaiting=waitForGoogleLibraries(cancelledRef);
     }
 
-    void loadPicker().catch(()=>{if(!cancelledRef.current)setPickerError('No se pudo consultar la conexión con Google. Vuelve a intentarlo.');});
+    void loadPicker().catch((error: unknown)=>{if(!cancelledRef.current)setPickerError(error instanceof Error ? error.message : 'No se pudo consultar la conexión con Google. Vuelve a intentarlo.');});
 
     return () => {
       cancelledRef.current = true;
@@ -144,16 +136,22 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
     };
   }, [companyId, pushLog, waitForGoogleLibraries,pickerAttempt]);
 
-  function selectFiles() {
+  async function selectFiles() {
     if (!dataConsent) return;
-    if (!pickerConfig?.enabled || !tokenClient || !pickerReady) {
+    if (!pickerConfig?.enabled || !pickerReady || pickerBusy) {
       pushLog('Google Picker todavia no esta listo.');
       return;
     }
 
     setPickerError('');
     setPickerBusy(true);
-    tokenClient.requestAccessToken({ prompt: accessToken ? '' : 'consent' });
+    try {
+      const permission = await apiRequest<{ access_token: string }>('/integrations/google/picker-token', { cache: 'no-store' });
+      openPicker(pickerConfig, permission.access_token);
+    } catch (error) {
+      setPickerBusy(false);
+      setPickerError(error instanceof Error ? error.message : 'No se pudo abrir Drive. Revisa la conexión de Google en Conexiones.');
+    }
   }
 
   async function syncAll() {
@@ -176,7 +174,7 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
     <Panel>
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">RAG comercial</p>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">BASE DE CONOCIMIENTO</p>
           <h2 className="mt-2 text-3xl font-black text-sabero-navy">Documentos autorizados</h2>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -193,16 +191,16 @@ export function Knowledge({ companyId, files, reload, pushLog }: { companyId: st
         {[
           ['1', 'Selecciona documentos', 'PDF, Google Docs o DOCX desde Drive.'],
           ['2', 'Autoriza acceso', 'Google permite leer solo archivos elegidos.'],
-          ['3', 'Sincroniza RAG', 'Se indexan fragmentos para responder sin inventar.'],
+          ['3', 'Actualiza el conocimiento', 'Tu agente podrá consultar los documentos autorizados.'],
         ].map(([step, title, text]) => (
           <div key={step} className="rounded-2xl border border-sabero-electric/20 bg-blue-50 p-4">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-sabero-electric">Paso {step}</p>
             <h3 className="mt-2 font-black text-sabero-navy">{title}</h3>
             <p className="mt-1 text-sm font-semibold text-slate-600">{text}</p>
           </div>
         ))}
       </div>
       {pickerError?<div role="alert" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800"><p>{pickerError}</p><Button variant="ghost" onClick={()=>setPickerAttempt(value=>value+1)}>Reintentar conexión</Button></div>:!pickerReady&&<p role="status" className="mt-4 text-sm text-slate-500">Preparando el selector de Google…</p>}
+      {files.some(file => file.sync_status === 'pending' || file.sync_status === 'syncing') && <p role="status" className="mt-4 text-sm text-slate-600">Preparando documentos para el agente. El estado se actualiza automáticamente.</p>}
       <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
         {files.length === 0 ? (
           <div className="p-8 text-center">

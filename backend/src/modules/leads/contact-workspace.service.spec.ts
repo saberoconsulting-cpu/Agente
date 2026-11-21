@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { ContactWorkspaceService } from './contact-workspace.service';
 
 describe('Contact workspace operations',()=>{

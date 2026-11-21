@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import {ConfigService} from '@nestjs/config';
 import {PlatformService} from './platform.service';
 import {PlatformController} from './platform.controller';
@@ -35,6 +36,18 @@ describe('Application access boundary',()=>{
   it('keeps public applications disabled in tenant backends',async()=>{
     const service=new PlatformService(new ConfigService({PUBLIC_ACCESS_REQUESTS_ENABLED:'true',COMPANY_ID:'cliente',PLATFORM_ADMIN_COMPANY_ID:'sabero'}),{} as any);
     await expect(service.accessRequest({})).rejects.toThrow('no están disponibles');
+  });
+  it('keeps the chosen plan with the application and rejects unknown plans',async()=>{
+    (axios.request as jest.Mock).mockResolvedValue({data:{received:true}});
+    const config=new ConfigService({PUBLIC_ACCESS_REQUESTS_ENABLED:'true',COMPANY_ID:'sabero',PLATFORM_ADMIN_COMPANY_ID:'sabero',PLATFORM_API_URL:'http://localhost:3010'});
+    const service=new PlatformService(config,{} as any);
+    const base={business_name:'Acme',contact_name:'Ana',email:'ana@acme.pe',phone:'912345678',phone_country:'PE',password:'una-clave-larga-123'};
+    await expect(service.accessRequest({...base,plan:'gratis'})).rejects.toThrow('plan válido');
+    await service.accessRequest({...base,plan:'pro'});
+    const sent=(axios.request as jest.Mock).mock.calls.at(-1)?.[0]?.data;
+    expect(sent.plan).toBe('pro');
+    await service.accessRequest(base);
+    expect((axios.request as jest.Mock).mock.calls.at(-1)?.[0]?.data.plan).toBeUndefined();
   });
   it('limits anonymous submissions without creating or authenticating users',async()=>{
     const service={accessRequest:jest.fn().mockResolvedValue({received:true})};

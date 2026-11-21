@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { SalesPipelineService } from './sales-pipeline.service';
 
 describe('SalesPipelineService', () => {

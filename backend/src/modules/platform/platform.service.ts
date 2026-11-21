@@ -66,6 +66,10 @@ export class PlatformService implements OnModuleInit, OnModuleDestroy {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email)) throw new BadRequestException('Revisa el correo.');
     try {Object.assign(input,accessRequestPhone(input.phone,body.phone_country));}
     catch {throw new BadRequestException('Revisa el número de teléfono y el país elegido.');}
+    if(body.plan!==undefined&&body.plan!==null&&body.plan!==''){
+      if(typeof body.plan!=='string'||!['basic','standard','pro','business','unlimited'].includes(body.plan))throw new BadRequestException('Elige un plan válido.');
+      input.plan=body.plan;
+    }
     if(typeof body.password!=='string'||body.password.length<12||body.password.length>128)throw new BadRequestException('Elige una contraseña de entre 12 y 128 caracteres.');
     input.password_hash=hashPassword(body.password);
     await this.request('POST','/v1/access-requests',input);

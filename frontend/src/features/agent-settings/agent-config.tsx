@@ -11,7 +11,7 @@ import { useUnsavedChanges } from '@/components/action-confirmation';
 export function AgentConfig({ companyId, settings, reload, pushLog }: { companyId: string; settings: AgentSettings | null; reload: (id?: string) => Promise<void>; pushLog: (m: string) => void }) {
   const [brief, setBrief] = useState(companyId === 'sabero' ? 'Somos SABERO Consulting. Vendemos software a medida, arquitectura cloud y automatizaciones con IA para empresas que quieren vender mas, operar mejor y escalar.' : '');
   const [briefTouched, setBriefTouched] = useState(false);
-  const [rules, setRules] = useState(settings?.settings.system_rules || '');
+  const [rules, setRules] = useState(settings?.settings?.system_rules || '');
   const [manualServiceName, setManualServiceName] = useState('');
   const [manualServiceDescription, setManualServiceDescription] = useState('');
   const [scheduling, setScheduling] = useState(false);
@@ -20,10 +20,10 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
     briefTouched
     || manualServiceName.trim()
     || manualServiceDescription.trim()
-    || (settings && scheduling !== Boolean(settings.settings.scheduling_enabled))
-    || (settings && rules !== (settings.settings.system_rules || ''))
+    || (settings && scheduling !== Boolean(settings.settings?.scheduling_enabled))
+    || (settings && rules !== (settings.settings?.system_rules || ''))
   ));
-  useEffect(() => { setScheduling(Boolean(settings?.settings.scheduling_enabled)); }, [settings?.settings.scheduling_enabled]);
+  useEffect(() => { setScheduling(Boolean(settings?.settings?.scheduling_enabled)); }, [settings?.settings?.scheduling_enabled]);
 
   async function saveScheduling() {
     setSavingScheduling(true);
@@ -36,8 +36,8 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
   }
 
   useEffect(() => {
-    setRules(settings?.settings.system_rules || '');
-  }, [settings?.settings.system_rules]);
+    setRules(settings?.settings?.system_rules || '');
+  }, [settings?.settings?.system_rules]);
 
   async function generateFromBrief() {
     const cleanBrief = brief.trim();
@@ -142,17 +142,17 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
           placeholder="Ejemplo: vendemos software a medida para inmobiliarias, automatizamos ventas por WhatsApp y agendamos demos..."
         />
         <div className="mt-4 flex flex-wrap gap-3">
-          <Button onClick={generateFromBrief}><Bot className="mr-2 h-4 w-4" />Generar configuracion</Button>
-          <StatusPill active={Boolean(settings?.settings.system_rules)} label={settings?.settings.system_rules ? 'Config editable' : 'Pendiente'} />
+          <Button onClick={generateFromBrief}><Bot className="mr-2 h-4 w-4" />Generar configuración</Button>
+          <StatusPill active={Boolean(settings?.settings?.system_rules)} label={settings?.settings?.system_rules ? 'Config editable' : 'Pendiente'} />
         </div>
       </Panel>
       <Panel>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Prom comercial</p>
-            <h3 className="mt-2 text-2xl font-black text-sabero-navy">{settings?.settings.agent_name || 'Agente comercial IA'}</h3>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">Instrucciones comerciales</p>
+            <h3 className="mt-2 text-2xl font-black text-sabero-navy">{settings?.settings?.agent_name || 'Agente comercial IA'}</h3>
           </div>
-          <Button variant="ghost" onClick={saveRules}>Guardar edicion</Button>
+          <Button variant="ghost" onClick={saveRules}>Guardar cambios</Button>
         </div>
         <textarea
           className="mt-5 min-h-56 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold leading-6 text-sabero-navy outline-none focus:border-sabero-electric"
@@ -195,7 +195,7 @@ export function AgentConfig({ companyId, settings, reload, pushLog }: { companyI
             </div>
           )) : (
             <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm font-bold text-slate-500">
-              Escribe el prom del negocio y presiona “Generar configuracion”; aqui se listaran automaticamente los servicios detectados.
+              Describe tu negocio y pulsa “Generar configuración”. Los servicios detectados aparecerán aquí.
             </div>
           )}
         </div>

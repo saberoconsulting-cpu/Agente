@@ -11,22 +11,27 @@ import {PhoneField} from '@/components/phone-field';
 import {internationalPhone} from '@/lib/phone';
 import type {CountryCode} from 'libphonenumber-js/max';
 import {useActionConfirmation,useUnsavedChanges} from '@/components/action-confirmation';
+import {PasswordRecovery} from '@/components/password-recovery';
+import { publicPlans } from '@/content/plans';
+import { PlanSelect } from '@/components/plan-select';
 
-export function LoginScreen({ onReady }: { onReady: () => void }) {
+export function LoginScreen({ onReady, onBack, notice, initialMode = 'login', initialPlan = '' }: { onReady: () => void; onBack?: () => void; notice?: string; initialMode?: 'login' | 'register'; initialPlan?: string }) {
   const {confirmDiscard}=useActionConfirmation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [businessName, setBusinessName] = useState('');
   const [contactName, setContactName] = useState('');
   const [phone, setPhone] = useState('');
   const [phoneCountry,setPhoneCountry]=useState<CountryCode | ''>('');
   const [website, setWebsite] = useState('');
+  const [plan, setPlan] = useState(publicPlans.some(item => item.id === initialPlan) ? initialPlan : '');
   const [received, setReceived] = useState(false);
-  const [step,setStep] = useState<1|2>(1);
+  const [step,setStep] = useState<1|2|3>(1);
   useUnsavedChanges('public-access-form',!received&&Boolean(email.trim()||password||businessName.trim()||contactName.trim()||phone.trim()));
 
   async function changeMode(){
@@ -42,6 +47,11 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
       setStep(2);
       return;
     }
+    if (mode === 'register' && step === 2) {
+      if (!plan) {setError('Elige el plan que quieres contratar.'); return;}
+      setStep(3);
+      return;
+    }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError('Ingresa un correo empresarial valido.');
       return;
@@ -55,7 +65,7 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
       if (mode === 'register') {
         const normalizedPhone=phoneCountry ? internationalPhone(phone,phoneCountry) : null;
         if(!normalizedPhone){setError('Revisa el número de teléfono y el país elegido.');return;}
-        await apiRequest('/platform/access-requests', {method:'POST',body:JSON.stringify({business_name:businessName,contact_name:contactName,email,phone:normalizedPhone,phone_country:phoneCountry,password,website})});
+        await apiRequest('/platform/access-requests', {method:'POST',body:JSON.stringify({business_name:businessName,contact_name:contactName,email,phone:normalizedPhone,phone_country:phoneCountry,password,website,plan})});
         setReceived(true);
       } else {
         await login(email, password);
@@ -69,7 +79,8 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
   }
 
   return (
-    <main className="grid min-h-screen grid-cols-1 bg-[#f4f8f7] lg:grid-cols-[1.05fr_0.95fr]">
+    <main className="auth-screen grid min-h-screen grid-cols-1 bg-[#f4f8f7] lg:grid-cols-[1.05fr_0.95fr]">
+      {recovering && <PasswordRecovery initialEmail={email} onClose={()=>setRecovering(false)}/>}
       <section className="login-visual relative hidden overflow-hidden lg:block">
         <svg
           aria-hidden="true"
@@ -139,6 +150,7 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
 
       <section className="flex items-center justify-center px-5 py-8 sm:p-8">
         <form onSubmit={submit} className="w-full max-w-md rounded-[28px] border border-white bg-white p-6 shadow-[0_20px_70px_rgba(10,30,60,0.08)] sm:p-8">
+          {onBack && <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-sabero-electric"><ArrowLeft className="h-4 w-4" />Volver al inicio</button>}
           <div className="flex justify-center">
             <Brand />
           </div>
@@ -146,26 +158,27 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
             <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">
               {mode === 'login' ? 'Acceso privado' : received ? 'Gracias por tu interés' : 'Acceso empresarial'}
             </p>
-            <h2 className="mt-2 text-3xl font-black tracking-[-0.03em] text-sabero-navy">
+            <h2 className={`mt-2 font-black tracking-[-0.03em] text-sabero-navy ${mode === 'register' ? 'text-2xl' : 'text-3xl'}`}>
               {mode === 'login' ? 'Ingresa a tu centro comercial IA' : received ? 'Solicitud recibida' : 'Solicita acceso para tu empresa'}
             </h2>
           </div>
           {mode === 'register' && !received && <>
-            <p className="mt-3 text-sm leading-6 text-slate-500">Cuéntanos de tu negocio. Nuestro equipo revisará tu solicitud.</p>
-            <ol aria-label="Pasos de la solicitud" className="my-6 flex list-none items-center gap-4 p-0">
-              {[['1', 'Tu empresa'], ['2', 'Contacto']].map(([number, label], index) => <li key={number} aria-current={step === index + 1 ? 'step' : undefined} className="flex flex-1 items-center gap-2.5">
+            {step === 1 && <p className="mt-3 text-sm leading-6 text-slate-500">Cuéntanos de tu negocio. Nuestro equipo revisará tu solicitud.</p>}
+            <ol aria-label="Pasos de la solicitud" className="my-4 flex list-none items-center gap-4 p-0">
+              {[['1', 'Tu empresa'], ['2', 'Plan'], ['3', 'Contacto']].map(([number, label], index) => <li key={number} aria-current={step === index + 1 ? 'step' : undefined} className="flex flex-1 items-center gap-2.5">
                 <span className={`grid h-7 w-5 shrink-0 place-items-center text-sm font-semibold tabular-nums ${step >= index + 1 ? 'text-sabero-electric' : 'text-slate-400'}`}>{number}</span>
-                <span className={`text-xs font-semibold ${step >= index + 1 ? 'text-sabero-navy' : 'text-slate-400'}`}>{label}</span>{index === 0 && <span className="ml-auto h-px flex-1 bg-slate-200"/>}
+                <span className={`text-xs font-semibold ${step >= index + 1 ? 'text-sabero-navy' : 'text-slate-400'}`}>{label}</span>{index < 2 && <span className="ml-auto h-px flex-1 bg-slate-200"/>}
               </li>)}
             </ol>
             {step === 1 && <div className="grid w-full gap-5">
               <label className="block w-full min-w-0 text-sm font-semibold text-slate-600">Empresa<span className="mt-2 flex h-14 w-full min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 focus-within:border-sabero-electric focus-within:ring-2 focus-within:ring-sabero-electric/10"><Building2 className="h-5 w-5 shrink-0 text-sabero-electric"/><input required maxLength={150} autoComplete="organization" placeholder="Nombre de tu empresa" value={businessName} onChange={event=>setBusinessName(event.target.value)} className="h-full w-0 min-w-0 flex-1 bg-transparent text-base font-normal leading-normal text-sabero-navy caret-sabero-electric outline-none placeholder:text-slate-400"/></span></label>
               <label className="block w-full min-w-0 text-sm font-semibold text-slate-600">Tu nombre<span className="mt-2 flex h-14 w-full min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 focus-within:border-sabero-electric focus-within:ring-2 focus-within:ring-sabero-electric/10"><UserRound className="h-5 w-5 shrink-0 text-sabero-electric"/><input required maxLength={120} autoComplete="name" placeholder="¿Cómo te llamas?" value={contactName} onChange={event=>setContactName(event.target.value)} className="h-full w-0 min-w-0 flex-1 bg-transparent text-base font-normal leading-normal text-sabero-navy caret-sabero-electric outline-none placeholder:text-slate-400"/></span></label>
             </div>}
+            {step === 2 && <PlanSelect value={plan} onChange={setPlan} />}
             <div hidden aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" value={website} onChange={event=>setWebsite(event.target.value)}/></div>
           </>}
-          {!received && (mode === 'login' || step === 2) && <>
-          <label className="mt-7 block text-sm font-bold text-slate-600">
+          {!received && (mode === 'login' || step === 3) && <>
+          <label className={`${mode === 'register' ? 'mt-2' : 'mt-7'} block text-sm font-bold text-slate-600`}>
             Correo
             <span className="mt-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Mail className="h-5 w-5 text-sabero-electric" />
@@ -174,7 +187,7 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
           </label>
           {mode === 'register' && <PhoneField country={phoneCountry} value={phone} onCountryChange={setPhoneCountry} onChange={setPhone}/>}
           </>}
-          {(mode === 'login' || (step === 2 && !received)) && <label className="mt-4 block text-sm font-bold text-slate-600">
+          {(mode === 'login' || (step === 3 && !received)) && <label className="mt-4 block text-sm font-bold text-slate-600">
             Contrasena segura
             <span className="mt-2 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
               <Lock className="h-5 w-5 text-sabero-electric" />
@@ -184,13 +197,15 @@ export function LoginScreen({ onReady }: { onReady: () => void }) {
               </button>
             </span>
           </label>}
-          {mode === 'register' && received && <div role="status" className="mt-6"><span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-6 w-6"/></span><p className="text-sm leading-6 text-slate-600">Revisaremos los datos de <strong>{businessName}</strong> y te indicaremos los siguientes pasos. El acceso se habilita tras confirmar el pago.</p><p className="mt-3 text-xs text-slate-400">Todavía no se ha creado una cuenta activa.</p></div>}
+          {mode === 'register' && received && <div role="status" className="mt-6"><span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-emerald-50 text-emerald-600"><CheckCircle2 className="h-6 w-6"/></span><p className="text-sm leading-6 text-slate-600">Recibimos la solicitud de <strong>{businessName}</strong> para el plan <strong>{publicPlans.find(item=>item.id===plan)?.name}</strong>. Te escribiremos por <strong>WhatsApp</strong> al número que registraste para coordinar el pago. El acceso se habilita tras confirmar el pago.</p><p className="mt-3 text-xs text-slate-400">Todavía no se ha creado una cuenta activa.</p></div>}
+          {notice && mode === 'login' && !error && <p role="status" className="mt-4 rounded-xl border border-sabero-electric/30 bg-sabero-mist p-3 text-sm font-semibold text-sabero-navy">{notice}</p>}
           {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-bold text-sabero-crimson">{error}</p>}
           {!received && <div className="mt-6 flex items-center gap-3">
-            {mode === 'register' && step === 2 && <Button type="button" variant="ghost" aria-label="Volver al paso anterior" onClick={()=>{setStep(1);setError('');}} disabled={loading}><ArrowLeft className="h-4 w-4"/></Button>}
-            <Button disabled={loading} className="flex-1" variant="primary">{loading ? 'Enviando...' : mode === 'login' ? 'Entrar al dashboard' : step === 1 ? 'Continuar' : 'Enviar solicitud'}{mode === 'register' && !loading && <ArrowRight className="ml-2 h-4 w-4"/>}</Button>
+            {mode === 'register' && step > 1 && <Button type="button" variant="ghost" aria-label="Volver al paso anterior" onClick={()=>{setStep(step === 3 ? 2 : 1);setError('');}} disabled={loading}><ArrowLeft className="h-4 w-4"/></Button>}
+            <Button disabled={loading} className="flex-1" variant="primary">{loading ? 'Enviando...' : mode === 'login' ? 'Entrar al dashboard' : step < 3 ? 'Continuar' : 'Enviar solicitud'}{mode === 'register' && !loading && <ArrowRight className="ml-2 h-4 w-4"/>}</Button>
           </div>}
           <button type="button" disabled={loading} onClick={()=>void changeMode()} className="mt-5 w-full text-sm font-semibold text-sabero-electric hover:text-blue-700 disabled:opacity-50">{mode === 'login' ? 'Solicitar acceso empresarial' : 'Ya tengo acceso'}</button>
+          {mode === 'login' && <button type="button" disabled={loading} onClick={()=>setRecovering(true)} className="mt-4 w-full text-sm font-semibold text-slate-600 hover:text-sabero-electric">Olvidé mi contraseña</button>}
           <div className="mt-6 border-t border-slate-100 pt-5"><LegalLinks /></div>
         </form>
       </section>

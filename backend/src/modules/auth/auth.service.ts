@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { TenantService } from '../tenancy/tenant.service';
+import { tenantContext } from '../tenancy/tenant-context';
 import { hashPassword, verifyPassword } from './password';
 import { signToken, verifyToken } from './token';
 
@@ -19,9 +21,17 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly tenants: TenantService,
   ) {}
 
   async login(email: string, password: string) {
+    const routed = await this.tenants.companyForEmail(email);
+    const companyId = routed ?? this.tenants.defaultCompanyId;
+    await this.tenants.ensure(companyId);
+    return tenantContext.run({ companyId }, () => this.loginForTenant(email, password));
+  }
+
+  private async loginForTenant(email: string, password: string) {
     const user = await this.findUserByEmail(email);
     if (!user || !user.active || !verifyPassword(password, user.password_hash)) {
       throw new UnauthorizedException('Invalid email or password');
@@ -58,33 +68,62 @@ export class AuthService {
   }
 
   async meForPayload(payload: ReturnType<AuthService['verifyAccessToken']>) {
-    const user = await this.prisma.adminUser.findFirst({ where: { id: payload.sub, active: true } });
+    await this.tenants.ensure(payload.company_id);
+    return tenantContext.run({ companyId: payload.company_id }, () => this.meForPayloadInTenant(payload));
+  }
+
+  private async meForPayloadInTenant(payload: ReturnType<AuthService['verifyAccessToken']>) {
+    if (payload.sid) {
+      const session = await this.prisma.authSession.findFirst({ where: { id: payload.sid, userId: payload.sub, revokedAt: null, expiresAt: { gt: new Date() } } });
+      if (!session) throw new UnauthorizedException('La sesión venció. Inicia sesión de nuevo.');
+    }
+    const user = await this.prisma.adminUser.findFirst({ where: { id: payload.sub, companyId: payload.company_id, active: true } });
     if (!user) throw new UnauthorizedException('Invalid session');
     return this.safeUser(this.toAdminUser(user));
   }
 
   async refresh(refreshToken: string) {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
-    const sessionRow = await this.prisma.authSession.findFirst({ where: { refreshTokenHash: this.hashToken(refreshToken), revokedAt: null, expiresAt: { gt: new Date() } } });
-    const prismaUser = sessionRow ? await this.prisma.adminUser.findFirst({ where: { id: sessionRow.userId, active: true } }) : null;
-    if (!sessionRow || !prismaUser) throw new UnauthorizedException('Invalid refresh token');
-    const user = this.toAdminUser(prismaUser);
-    const ttl = this.accessTokenTtl();
-    const session = await this.rotateSession(sessionRow.id, user.id, ttl);
-    const token = signToken({
-      sub: user.id, email: user.email, company_id: user.company_id, role: user.role,
-      sid: session.id, csrf: session.csrfToken, exp: Math.floor(Date.now() / 1000) + ttl,
-    }, this.getSecret());
-    return { access_token: token, expires_in: ttl, refresh_token: session.refreshToken, csrf_token: session.csrfToken, user: this.safeUser(user) };
+    // Sessions live in each tenant database; probe the default tenant first,
+    // then every routed tenant that has been initialized in this process.
+    for (const companyId of this.tenants.candidateCompanyIds()) {
+      const result = await this.refreshInTenant(refreshToken, companyId);
+      if (result) return result;
+    }
+    throw new UnauthorizedException('Invalid refresh token');
+  }
+
+  private async refreshInTenant(refreshToken: string, companyId: string) {
+    await this.tenants.ensure(companyId);
+    return tenantContext.run({ companyId }, async () => {
+      const hash = this.hashToken(refreshToken);
+      const sessionRow = await this.prisma.authSession.findFirst({ where: { refreshTokenHash: hash, revokedAt: null, expiresAt: { gt: new Date() } } });
+      const prismaUser = sessionRow ? await this.prisma.adminUser.findFirst({ where: { id: sessionRow.userId, active: true } }) : null;
+      if (!sessionRow || !prismaUser) return null;
+      const user = this.toAdminUser(prismaUser);
+      const ttl = this.accessTokenTtl();
+      const session = await this.rotateSession(sessionRow.id, user.id, ttl);
+      const token = signToken({
+        sub: user.id, email: user.email, company_id: user.company_id, role: user.role,
+        sid: session.id, csrf: session.csrfToken, exp: Math.floor(Date.now() / 1000) + ttl,
+      }, this.getSecret());
+      return { access_token: token, expires_in: ttl, refresh_token: session.refreshToken, csrf_token: session.csrfToken, user: this.safeUser(user) };
+    });
   }
 
   async logout(token?: string) {
     const payload = token ? this.verifyAccessToken(token) : null;
-    if (payload?.sid) await this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } });
+    if (!payload?.sid) return;
+    await this.tenants.ensure(payload.company_id);
+    await tenantContext.run({ companyId: payload.company_id }, () =>
+      this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } }));
   }
 
   async logoutFromPayload(payload: ReturnType<AuthService['verifyAccessToken']>) {
-    if (payload.sid) await this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } });
+    if (!payload.sid) return;
+    await this.tenants.ensure(payload.company_id);
+    await tenantContext.run({ companyId: payload.company_id }, () =>
+      this.prisma.authSession.updateMany({ where: { id: payload.sid }, data: { revokedAt: new Date() } }));
   }
 
   async createUser(input: {
@@ -122,8 +161,11 @@ export class AuthService {
 
   async ensureBootstrapOwner(companyId: string, email: string, password: string) {
     if (password.length < 10) throw new BadRequestException('ADMIN_PASSWORD must be at least 10 characters');
-    const user = await this.prisma.adminUser.upsert({ where: { email }, create: { companyId, email, passwordHash: hashPassword(password), role: 'owner', active: true }, update: { companyId, passwordHash: hashPassword(password), active: true, updatedAt: new Date() } });
-    return this.safeUser(this.toAdminUser(user));
+    await this.tenants.ensure(companyId);
+    return tenantContext.run({ companyId }, async () => {
+      const user = await this.prisma.adminUser.upsert({ where: { email }, create: { companyId, email, passwordHash: hashPassword(password), role: 'owner', active: true }, update: { companyId, passwordHash: hashPassword(password), active: true, updatedAt: new Date() } });
+      return this.safeUser(this.toAdminUser(user));
+    });
   }
 
   verifyAccessToken(token: string) {

@@ -5,4 +5,87 @@
 
 .avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit}.person .waiting{color:#ba9a64;font-size:8px;margin-top:4px}
 
+.page { font-family: 'Segoe UI', system-ui, sans-serif; color: #071a33; }
+.workspace .chat, .workspace .information, .workspace button, .workspace textarea, .workspace select, .workspace input, .workspace details, .workspace section { border-radius: 0; box-shadow: none; }
+.chat { border-color: #cbd9ec; border-top: 2px solid #004cff; min-height: 620px; }
+.chatHeader { padding: 18px 22px; background: #fff; }
+.chatHeader h3 { font-size: 17px; font-weight: 650; }
+.chatHeader p { font-size: 12px; color: #60768e; }
+.attention { background: #f3f6ff; border-block-color: #dbe4f5; }
+.attention > span { color: #455d83; }
+.attention strong { font-size: 12px; font-weight: 600; }
+.attention > button { min-height: 36px; font-size: 12px; border-color: #bdcef3; color: #0045d6; font-weight: 600; }
+.attention[data-mode='human'] { border-left: 2px solid #f00828; background: #f9faff; }
+.messages { background-color: #eef2f7; background-image: none; gap: 16px; }
+.message { border-radius: 0; border-color: #d8e2ee; padding: 12px 16px; max-width: 82%; }
+.message p { color: #233d57; font-size: 14px; line-height: 1.7; }
+.messageSender { color: #627b95; font-size: 11px; font-weight: 600; }
+.message time { color: #6c8198; font-size: 10px; }
+.outbound { border-radius: 0; border-color: #cbdaf9; background: #e7eeff; }
+.humanMessage { border-color: #cbdaf9; border-right: 2px solid #004cff; background: #e7eeff; }
+.humanMessage .messageSender { color: #0045d6; }
+.manualCaption { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; color: #0045d6; font-size: 12px; }
+.manualCaption strong { font-weight: 650; }
+.manualCaption span { margin-left: auto; font-size: 11px; color: #627a92; }
+.composer textarea { min-height: 76px; color: #233d57; background: white; border-color: #c5d4e9; font-size: 14px; line-height: 1.65; }
+.composer textarea:focus { border-color: #004cff; }
+.composerTools { gap: 12px; }
+.composerTools > button { color: #375a8c; font-size: 12px; min-height: 36px; }
+.composerTools > span { font-size: 10px; color: #70849b; }
+.composerTools > button:last-child { background: #004cff; border-color: #004cff; font-size: 12px; font-weight: 600; min-height: 40px; }
+.composerHint { color: #536f8a; font-size: 12px; }
+.windowNotice { color: #795920; font-size: 12px; }
+.information { border-color: #d8e3ed; }
+.information h3 { font-size: 16px; }
+.field label { font-size: 12px; color: #536d87; }
+.field select, .section input, .section textarea, .section select { font-size: 13px; color: #344f6a; }
+.summary p, .summary h4, .section summary { font-size: 12px; color: #526d8a; }
+.contactDates dt, .contactDates dd { font-size: 11px; }
+@media (max-width: 760px) {
+  .chat { min-height: 570px; height: calc(100dvh - 190px); }
+  .chatHeader { padding: 15px; }
+  .message { max-width: 91%; padding: 10px 13px; }
+  .message p { font-size: 14px; }
+  .manualCaption span { margin-left: 0; }
+  .attention > button { font-size: 11px; }
+}
+
 .information{height:calc(100dvh - 260px);min-height:730px;max-height:1100px;overflow-y:auto;scrollbar-width:thin;align-content:start}@media(max-width:760px){.information.showInfo{height:auto;min-height:0;max-height:none}}
+
+/* WhatsApp look for the contact conversation: wallpaper, green outgoing bubbles, white incoming bubbles with a tail. */
+.workspace .chat { border-top: 2px solid #075e54; border-color: #d1d7db; border-radius: 10px; overflow: hidden; }
+.workspace .chatHeader { background: #075e54; border-bottom: 0; color: #fff; }
+.workspace .chatHeader h3 { color: #fff; }
+.workspace .chatHeader p { color: #c8ebe2; }
+.workspace .chatHeader button { color: #fff; border-color: rgba(255, 255, 255, .35); background: transparent; }
+.workspace .messages { background-color: #ece5dd; background-image: radial-gradient(rgba(11, 20, 26, .05) 1px, transparent 1px); background-size: 14px 14px; gap: 5px; padding: 22px 6%; }
+.workspace .message { position: relative; background: #fff; border: 0; border-radius: 0 8px 8px 8px; box-shadow: 0 1px 1px rgba(11, 20, 26, .14); padding: 6px 9px 5px; min-width: 110px; max-width: 78%; margin-top: 4px; }
+.workspace .message::before { content: ''; position: absolute; top: 0; left: -8px; width: 0; height: 0; border-top: 8px solid #fff; border-left: 8px solid transparent; }
+.workspace .outbound, .workspace .humanMessage { background: #d9fdd3; border: 0; border-radius: 8px 0 8px 8px; }
+.workspace .outbound::before, .workspace .humanMessage::before { left: auto; right: -8px; border-left: 0; border-right: 8px solid transparent; border-top-color: #d9fdd3; }
+.workspace .messageSender { font-size: 11.5px; font-weight: 700; color: #027eb5; }
+.workspace .outbound .messageSender { color: #128c7e; }
+.workspace .humanMessage .messageSender { color: #075e54; }
+.workspace .message p { margin-top: 1px; color: #111b21; font-size: 14px; line-height: 1.45; }
+.workspace .message time { margin-top: 2px; color: #667781; font-size: 10.5px; }
+.workspace .attachment { background: rgba(11, 20, 26, .05); border-radius: 6px; color: #3b4a54; }
+.workspace .older { background: #fff; border: 0; border-radius: 8px; color: #54656f; box-shadow: 0 1px 1px rgba(11, 20, 26, .14); }
+.workspace .attention { background: #f0f2f5; border-bottom: 1px solid #d1d7db; }
+.workspace .attention[data-mode='human'] { border-left: 3px solid #00a884; background: #f0f2f5; }
+.workspace .composer { background: #f0f2f5; border-top: 1px solid #d1d7db; }
+.workspace .composer textarea { background: #fff; border: 1px solid #d1d7db; border-radius: 8px; color: #111b21; }
+.workspace .composer textarea:focus { border-color: #00a884; }
+.workspace .composerTools > button:last-child { background: #00a884; border-color: #00a884; border-radius: 8px; color: #fff; }
+
+/* The reply area never gets cut off: it scrolls on its own and the send row stays visible. */
+.workspace .messages { min-height: 120px; }
+.workspace .composer { flex-shrink: 0; max-height: 58%; overflow-y: auto; scrollbar-width: thin; }
+.workspace .composerTools { position: sticky; bottom: 0; z-index: 2; background: #f0f2f5; padding-bottom: 2px; }
+.workspace .windowNotice { color: #6b5316; background: #fff3cd; border-radius: 8px; font-size: 12px; padding: 10px 12px; }
+.workspace .templateBox { background: #fff; border: 1px solid #d1d7db; border-radius: 8px; padding: 12px; gap: 10px; margin-bottom: 10px; }
+.workspace .templateBox label { font-size: 12px; font-weight: 600; color: #3b4a54; }
+.workspace .templateBox select, .workspace .templateBox input { border: 1px solid #d1d7db; border-radius: 8px; font-size: 14px; background: #fff; color: #111b21; }
+.workspace .templateBox small { color: #667781; font-size: 12px; }
+.workspace .previewLabel { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #667781; }
+.workspace .templatePreview { margin: 0; padding: 8px 10px; background: #d9fdd3; border-radius: 8px 0 8px 8px; color: #111b21; font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(11, 20, 26, .14); }
+.contactActions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 8px; }

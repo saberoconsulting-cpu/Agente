@@ -50,6 +50,7 @@ export type WhatsAppEmbeddedSignupConfig = {
   config_id: string | null;
   graph_api_version: string;
   enabled: boolean;
+  server_configured?: boolean;
   missing: string[];
 };
 

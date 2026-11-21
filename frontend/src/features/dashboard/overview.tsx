@@ -19,7 +19,7 @@ export function Overview({summary,settings,user,opportunities,log,drafts,reload,
   const [companyName,setCompanyName]=useState(''),[whatsapp,setWhatsapp]=useState<boolean|null>(null),[refreshing,setRefreshing]=useState(false),[refreshError,setRefreshError]=useState('');
   const inFlight=useRef(false);
   const companyId=user?.company_id||summary?.company_id||'';
-  const scheduling=Boolean(settings?.settings.scheduling_enabled);
+  const scheduling=Boolean(settings?.settings?.scheduling_enabled);
   useEffect(()=>{setNow(new Date());const timer=window.setInterval(()=>setNow(new Date()),60000);return()=>window.clearInterval(timer);},[]);
   useEffect(()=>{
     let cancelled=false;setWhatsapp(null);setCompanyName('');
@@ -35,7 +35,7 @@ export function Overview({summary,settings,user,opportunities,log,drafts,reload,
   useEffect(()=>{const timer=window.setInterval(()=>{if(document.visibilityState==='visible')void refresh();},15000);return()=>window.clearInterval(timer);},[refresh]);
   function toggleGuide(){setGuide(value=>{try{localStorage.setItem(`sabero:guide:${companyId}`,value?'hidden':'visible');}catch{}return !value;});}
   const steps=[
-    {id:'agent',title:'Dale personalidad a tu agente',description:'Cuéntale qué vendes, cómo atiendes y qué hace especial a tu negocio.',action:'Configurar agente',destination:'agent' as Destination,done:Boolean(settings?.settings.system_rules?.trim()),optional:false,Icon:Sparkles},
+    {id:'agent',title:'Dale personalidad a tu agente',description:'Cuéntale qué vendes, cómo atiendes y qué hace especial a tu negocio.',action:'Configurar agente',destination:'agent' as Destination,done:Boolean(settings?.settings?.system_rules?.trim()),optional:false,Icon:Sparkles},
     {id:'whatsapp',title:'Conecta tu canal de ventas',description:'Vincula el WhatsApp de tu empresa para empezar a conversar con tus clientes.',action:whatsapp?'Ver conexión':'Conectar WhatsApp',destination:'links' as Destination,done:whatsapp===true,optional:false,Icon:MessageCircle},
     {id:'knowledge',title:'Comparte lo que tu agente debe saber',description:'Añade tu catálogo, servicios o documentos desde Google Drive.',action:'Añadir documentos',destination:'knowledge' as Destination,done:Boolean(summary?.metrics.indexed_documents),optional:true,Icon:BookOpen},
     ...(scheduling?[{id:'google',title:'Prepara tu agenda',description:'Conecta Google para que tu agente consulte disponibilidad y proponga citas.',action:summary?.integrations.google_connected?'Ver conexión':'Conectar Google',destination:'links' as Destination,done:Boolean(summary?.integrations.google_connected),optional:false,Icon:CalendarClock}]:[]),

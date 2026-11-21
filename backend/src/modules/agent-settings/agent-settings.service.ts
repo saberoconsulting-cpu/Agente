@@ -54,9 +54,20 @@ export class AgentSettingsService {
       ),
     ]);
 
+    let settingsRows: Record<string, unknown>[] = settings.rows;
+    if (!settingsRows[0]) {
+      // Tenants provisioned before settings seeding existed get defaults on first read.
+      await this.db.query('insert into companies(id,name) values($1,$2) on conflict(id) do nothing', [companyId, companyId]);
+      await this.db.query(
+        `insert into company_agent_settings(company_id,agent_name,system_rules) values($1,$2,$3) on conflict(company_id) do nothing`,
+        [companyId, `Asistente virtual de ${companyId}`, 'Identificarse como asistente virtual. No inventar precios, descuentos, plazos ni capacidades. Usar exclusivamente el conocimiento autorizado de esta empresa.'],
+      );
+      settingsRows = (await this.db.query<Record<string, unknown>>('select * from company_agent_settings where company_id = $1', [companyId])).rows;
+    }
+
     return {
       company_id: companyId,
-      settings: settings.rows[0] ? { ...settings.rows[0], scheduling_enabled: policies.rows.some(policy => policy.policy_key === 'scheduling_enabled' && policy.active && policy.policy_text === 'true') } : null,
+      settings: settingsRows[0] ? { ...settingsRows[0], scheduling_enabled: policies.rows.some(policy => policy.policy_key === 'scheduling_enabled' && policy.active && policy.policy_text === 'true') } : null,
       policies: policies.rows,
       services: services.rows,
     };

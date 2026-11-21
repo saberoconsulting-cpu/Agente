@@ -68,7 +68,15 @@ export class KnowledgeService {
     );
 
     const documentId = documentResult.rows[0].id;
-    await this.db.query('delete from knowledge_chunks where document_id = $1', [documentId]);
+    // Older installations do not enforce cascading deletion. Replace all parts
+    // explicitly and retain historical references to the document, not old chunks.
+    await this.db.query(`with previous_chunks as materialized (
+      select id from knowledge_chunks where company_id=$1 and document_id=$2
+    ), detached_references as (
+      update knowledge_references set chunk_id=null where company_id=$1 and chunk_id in(select id from previous_chunks) returning id
+    ), removed_embeddings as (
+      delete from knowledge_embeddings where company_id=$1 and chunk_id in(select id from previous_chunks) and (select count(*) from detached_references)>=0 returning id
+    ) delete from knowledge_chunks where company_id=$1 and id in(select id from previous_chunks) and (select count(*) from removed_embeddings)>=0`, [input.companyId, documentId]);
 
     for (const [index, chunk] of chunks.entries()) {
       const chunkResult = await this.db.query<{ id: string }>(

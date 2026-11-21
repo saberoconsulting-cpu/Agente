@@ -6,8 +6,16 @@ const application={business_name:'Tienda Ejemplo',contact_name:'Ana',email:'ANA@
 test('public applications validate contact details and discard submitted access privileges',()=>{
   const value=requestInput({...application,status:'active',role:'owner',company_id:'sabero',password:'never stored'});
   assert.equal(value.email,'ana@ejemplo.pe');
-  assert.deepEqual(Object.keys(value).sort(),['business_name','contact_name','email','phone','phone_country']);
+  assert.deepEqual(Object.keys(value).sort(),['business_name','contact_name','email','phone','phone_country','plan']);
+  assert.equal(value.plan,null);
   assert.throws(()=>requestInput({...application,email:'not-an-email'}));
+});
+
+test('public applications accept catalogue plans and reject unknown plans',()=>{
+  for(const plan of ['basic','standard','pro','business','unlimited']){
+    assert.equal(requestInput({...application,plan}).plan,plan);
+  }
+  assert.throws(()=>requestInput({...application,plan:'free-admin'}),/Invalid plan/);
 });
 test('country selection validates shared prefixes and saves an international number',()=>{
   const canada=requestInput({...application,phone:'416 555 0123',phone_country:'CA'});

@@ -5,6 +5,8 @@ import { AuthService } from '../auth/auth.service';
 import { IS_PUBLIC_ROUTE } from './public.decorator';
 import { ROLES_KEY, UserRole } from './roles.decorator';
 import { PlatformService } from '../platform/platform.service';
+import { TenantService } from '../tenancy/tenant.service';
+import { tenantContext } from '../tenancy/tenant-context';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
@@ -12,6 +14,7 @@ export class ApiKeyGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly auth: AuthService,
     private readonly platform: PlatformService,
+    private readonly tenants: TenantService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -28,6 +31,8 @@ export class ApiKeyGuard implements CanActivate {
 
     const payload = this.auth.verifyAccessToken(token);
     await this.auth.meForPayload(payload);
+    await this.tenants.ensure(payload.company_id);
+    tenantContext.enterWith({ companyId: payload.company_id });
     this.platform.assertCompany(payload.company_id);
     if (this.platform.managed) await this.platform.company();
     (request as Request & { user?: unknown }).user = payload;

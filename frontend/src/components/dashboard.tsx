@@ -1,12 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Bot, Brain, Building2, CalendarClock, KeyRound, Link2, LogOut, Menu, Settings2, Target, Users, Gauge, RefreshCw, X } from 'lucide-react';
+import { BarChart3, Bot, Brain, Building2, CalendarClock, KeyRound, Link2, LogOut, MessageSquareText, Menu, Settings2, Target, Users, Gauge, RefreshCw, X } from 'lucide-react';
 import { Companies } from '@/features/dashboard/companies';
 import { RecordPermissions } from '@/components/list-controls';
 import { AccessRequests } from '@/features/dashboard/access-requests';
+import { SettingsFrame } from '@/components/settings-frame';
 import { LegalLinks } from '@/components/legal-links';
 import Script from 'next/script';
+import Image from 'next/image';
+import { Templates } from '@/features/templates/templates';
 import { Contacts } from '@/features/dashboard/contacts';
 import { Usage } from '@/features/dashboard/usage';
 import { apiRequest, clearToken, SessionUser } from '@/lib/api';
@@ -24,6 +27,7 @@ const views = [
   ['analytics', 'Resultados', BarChart3],
   ['usage', 'Consumo de IA', Gauge],
   ['links', 'Conexiones', Link2],
+  ['templates', 'Plantillas', MessageSquareText],
   ['knowledge', 'Conocimiento', Brain],
   ['agent', 'Agente comercial', Settings2],
   ['access', 'Accesos', KeyRound],
@@ -164,7 +168,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
   const canOperate = Boolean(user && ['owner', 'admin'].includes(user.role));
 
   return (
-    <RecordPermissions.Provider value={user}><main className="min-h-screen bg-sabero-mist">
+    <RecordPermissions.Provider value={user}><main className={`min-h-screen bg-sabero-mist ${['companies','requests','links','knowledge','agent','access','templates','contacts'].includes(view) ? 'platform-shell' : ''}`}>
       {menuOpen && (
         <button
           type="button"
@@ -177,7 +181,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
         className={`dashboard-sidebar fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-hidden bg-sabero-navy p-4 text-white shadow-enterprise transition-[width,transform] duration-200 motion-reduce:transition-none xl:translate-x-0 ${sidebarCollapsed ? 'xl:w-20' : 'xl:w-64'} ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <div className={`flex items-center gap-3 py-3 ${sidebarCollapsed ? 'xl:hidden' : ''}`}><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sabero-electric"><Bot className="h-6 w-6" /></span><div><p className="text-lg font-bold tracking-wide">SABERO AI</p><p className="text-xs text-blue-200">Agente de ventas</p></div></div>
+          <div className={`dashboard-brand ${sidebarCollapsed ? 'xl:hidden' : ''}`}><div className="dashboard-brand-logo"><Image src="/bots.png" alt="Asistente SABERO" width={48} height={48} priority /></div><p className="dashboard-brand-label">SABERO AI</p></div>
           <button type="button" aria-label={sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'} aria-expanded={!sidebarCollapsed} aria-controls="dashboard-navigation" title={sidebarCollapsed ? 'Expandir menú' : 'Contraer menú'} onClick={() => setSidebarCollapsed(value => !value)} className="hidden h-10 w-10 shrink-0 place-items-center rounded-xl text-blue-100 hover:bg-white/10 xl:grid"><Menu className="h-5 w-5" /></button>
           <button
             type="button"
@@ -211,7 +215,7 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
         <button type="button" onClick={()=>void requestSignOut()} title="Cerrar sesión" aria-label="Cerrar sesión" className={`mt-4 flex min-h-11 shrink-0 items-center gap-3 rounded-xl border-t border-white/10 px-4 text-sm text-blue-200 hover:bg-white/10 ${sidebarCollapsed?'xl:justify-center xl:px-0':''}`}><LogOut className="h-5 w-5 shrink-0"/><span className={sidebarCollapsed?'xl:hidden':''}>Cerrar sesión</span></button>
       </aside>
       <section className={`transition-[padding] duration-200 motion-reduce:transition-none ${sidebarCollapsed ? 'xl:pl-20' : 'xl:pl-64'}`}>
-        <header className={`sticky top-0 z-20 border-b border-slate-200/70 bg-white/86 px-5 py-4 backdrop-blur xl:px-10 ${['companies','overview'].includes(view)?'xl:hidden':''}`}>
+        <header className={`sticky top-0 z-20 border-b border-slate-200/70 bg-white/86 px-5 py-4 backdrop-blur xl:px-10 ${['companies','requests','overview','links','knowledge','agent','access','templates'].includes(view)?'xl:hidden':''}`}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <button
@@ -222,18 +226,17 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
               >
                 <Menu className="h-5 w-5" />
               </button>
-              {!['companies','overview'].includes(view)&&<div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{['companies','requests'].includes(view) ? 'Administración de la plataforma' : `${user?.company_id || 'Mi empresa'} · Tu negocio`}</p>
+              {!['companies','requests','overview','links','knowledge','agent','access','templates'].includes(view)&&<div className="min-w-0">
                 <h1 className="text-2xl font-black tracking-[-0.04em] text-sabero-navy sm:text-3xl">{activeTitle}</h1>
               </div>}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              {!['companies','overview'].includes(view)&&<Button variant="ghost" onClick={() => void refresh()} disabled={loading} aria-label="Actualizar panel"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></Button>}
-              {!['companies', 'requests','overview'].includes(view) && <StatusPill
+              {!['companies','requests','overview','links','knowledge','agent','access','templates'].includes(view)&&<Button variant="ghost" onClick={() => void refresh()} disabled={loading} aria-label="Actualizar panel"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></Button>}
+              {!['companies','requests','overview','links','knowledge','agent','access','templates'].includes(view) && <StatusPill
                 active={Boolean(summary?.integrations.google_connected)}
                 label={!summary ? 'Cargando Google…' : summary.integrations.google_connected ? 'Google conectado' : 'Google sin vincular'}
               />}
-              {!['companies', 'requests','overview'].includes(view) && settings?.settings.scheduling_enabled && <Button variant="ghost" onClick={() => window.open('https://calendar.google.com/calendar/u/0/r', '_blank', 'noopener,noreferrer')}>
+              {!['companies','requests','overview','links','knowledge','agent','access','templates'].includes(view) && settings?.settings?.scheduling_enabled && <Button variant="ghost" onClick={() => window.open('https://calendar.google.com/calendar/u/0/r', '_blank', 'noopener,noreferrer')}>
                 <CalendarClock className="mr-2 h-4 w-4" />Calendar
               </Button>}
             </div>
@@ -247,13 +250,14 @@ export function DashboardApp({ onLogout }: { onLogout: () => void }) {
           {view === 'usage' && <Usage />}
           {view === 'overview' && <Overview summary={summary} settings={settings} user={user} opportunities={opportunities} log={log} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} navigate={next => void navigateTo(next)} />}
           {view === 'analytics' && <Analytics summary={summary} opportunities={opportunities} />}
-          {view === 'knowledge' && <Knowledge companyId={companyId} files={files} reload={loadFiles} pushLog={pushLog} />}
-          {view === 'agent' && <AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} />}
-          {view === 'links' && <Links companyId={companyId} reload={reloadCommercial} pushLog={pushLog} googleConnectionResult={googleConnectionResult} />}
+          {view === 'knowledge' && <SettingsFrame view="knowledge"><Knowledge companyId={companyId} files={files} reload={loadFiles} pushLog={pushLog} /></SettingsFrame>}
+          {view === 'agent' && <SettingsFrame view="agent"><AgentConfig companyId={companyId} settings={settings} reload={loadSettings} pushLog={pushLog} /></SettingsFrame>}
+          {view === 'links' && <SettingsFrame view="links"><Links companyId={companyId} reload={reloadCommercial} pushLog={pushLog} googleConnectionResult={googleConnectionResult} /></SettingsFrame>}
+          {view === 'templates' && <SettingsFrame view="templates"><Templates pushLog={pushLog} /></SettingsFrame>}
           {view === 'opportunities' && (
             <Opportunities items={opportunities} users={users} drafts={followupDrafts} canOperate={canOperate} reload={reloadCommercial} initialSelectedId={focusedOpportunity} />
           )}
-          {view === 'access' && <Access users={users} companyId={companyId} reload={loadUsers} pushLog={pushLog} />}
+          {view === 'access' && <SettingsFrame view="access"><Access users={users} companyId={companyId} reload={loadUsers} pushLog={pushLog} /></SettingsFrame>}
         </div>
         <footer className="px-5 pb-8"><LegalLinks /></footer>
       </section>

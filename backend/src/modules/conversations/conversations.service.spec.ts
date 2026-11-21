@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { ConversationsService } from './conversations.service';
 import { MessageStore } from '../platform/message-store.service';
 

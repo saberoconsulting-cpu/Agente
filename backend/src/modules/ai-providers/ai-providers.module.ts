@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
+import { OAuthTokenCryptoService } from '../security/oauth-token-crypto.service';
 import { DeepSeekProvider } from './deepseek.provider';
+import { VisionController } from './vision.controller';
+import { VisionService } from './vision.service';
 
 @Module({
-  providers: [DeepSeekProvider],
-  exports: [DeepSeekProvider],
+  controllers: [VisionController],
+  providers: [DeepSeekProvider, VisionService, OAuthTokenCryptoService],
+  exports: [DeepSeekProvider, VisionService],
 })
 export class AiProvidersModule {}

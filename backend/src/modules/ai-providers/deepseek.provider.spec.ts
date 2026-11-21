@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { DeepSeekProvider } from './deepseek.provider';

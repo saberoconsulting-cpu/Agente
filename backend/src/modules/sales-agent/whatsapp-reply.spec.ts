@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { whatsappReply } from './whatsapp-reply';
 describe('WhatsApp brevity', () => {
   it('preserves concise product answers', () => expect(whatsappReply('Cuesta S/ 80. ¿Qué talla buscas?')).toBe('Cuesta S/ 80. ¿Qué talla buscas?'));

@@ -25,6 +25,7 @@ import { QueueModule } from './queue/queue.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { PrismaModule } from '../infrastructure/prisma/prisma.module';
 import { PlatformModule } from './platform/platform.module';
+import { TenancyModule } from './tenancy/tenancy.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { PlatformModule } from './platform/platform.module';
     PrismaModule,
     DatabaseModule,
     PlatformModule,
+    TenancyModule,
     EventsModule,
     AuditModule,
     AuthModule,

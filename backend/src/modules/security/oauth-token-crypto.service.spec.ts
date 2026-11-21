@@ -1,3 +1,4 @@
+/// <reference types="jest" />
 import { OAuthTokenCryptoService } from './oauth-token-crypto.service';
 
 describe('OAuthTokenCryptoService', () => {

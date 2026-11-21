@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../database/database.service';
@@ -165,7 +165,11 @@ export class ContactWorkspaceService {
   }
   async calendars(companyId:string,leadId:string){
     await this.lead(companyId,leadId);
-    try{return await this.google.listCalendars(companyId);}catch{throw new ServiceUnavailableException('No se pudieron consultar los calendarios conectados.');}
+    try{return await this.google.listCalendars(companyId);}catch(error){
+      const status=(error as {response?:{status?:number;data?:{error?:string|{message?:string}}}})?.response;
+      new Logger('ContactWorkspace').warn(`Google calendars failed: http=${status?.status??'none'} detail=${String(typeof status?.data?.error==='string'?status.data.error:status?.data?.error?.message??(error as Error)?.message??'').slice(0,160)}`);
+      throw new ServiceUnavailableException(status?.status===401||status?.data?.error==='invalid_grant'?'El acceso a Google venció. Reconecta Google en Conexiones.':'No se pudieron consultar los calendarios conectados. Reconecta Google en Conexiones o inténtalo de nuevo.');
+    }
   }
   async meetingLink(companyId:string,leadId:string,meetingId:string){
     await this.lead(companyId,leadId);
