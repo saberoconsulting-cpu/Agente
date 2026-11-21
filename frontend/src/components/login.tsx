@@ -152,7 +152,7 @@ export function LoginScreen({ onReady, onBack, notice, initialMode = 'login', in
         <form onSubmit={submit} className="w-full max-w-md rounded-[28px] border border-white bg-white p-6 shadow-[0_20px_70px_rgba(10,30,60,0.08)] sm:p-8">
           {onBack && <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-sabero-electric"><ArrowLeft className="h-4 w-4" />Volver al inicio</button>}
           <div className="flex justify-center">
-            <Brand />
+            <div className="scale-125 origin-center"><Brand /></div>
           </div>
           <div className="mt-7">
             <p className="text-xs font-black uppercase tracking-[0.22em] text-sabero-crimson">
@@ -206,7 +206,7 @@ export function LoginScreen({ onReady, onBack, notice, initialMode = 'login', in
           </div>}
           <button type="button" disabled={loading} onClick={()=>void changeMode()} className="mt-5 w-full text-sm font-semibold text-sabero-electric hover:text-blue-700 disabled:opacity-50">{mode === 'login' ? 'Solicitar acceso empresarial' : 'Ya tengo acceso'}</button>
           {mode === 'login' && <button type="button" disabled={loading} onClick={()=>setRecovering(true)} className="mt-4 w-full text-sm font-semibold text-slate-600 hover:text-sabero-electric">Olvidé mi contraseña</button>}
-          <div className="mt-6 border-t border-slate-100 pt-5"><LegalLinks /></div>
+          <div className="mt-4 border-t border-slate-100 pt-3"><LegalLinks /></div>
         </form>
       </section>
     </main>

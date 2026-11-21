@@ -77,7 +77,7 @@ export function PublicSite({ onReady, initialView = 'inicio' }: { onReady: () =>
     <div className="public-fine min-h-screen bg-[#f4f8f7] text-sabero-navy">
       <header className="sticky top-0 z-30 border-b border-sabero-line/70 bg-white/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3">
-          <NavLink target="inicio" go={go} className="block" ><Brand /></NavLink>
+          <NavLink target="inicio" go={go} className="block" ><Brand size="hero" /></NavLink>
           <nav aria-label="Secciones" className="hidden items-center gap-1 md:flex">
             {tabs.map(tab => (
               <NavLink key={tab.id} target={tab.id} go={go} current={view === tab.id}

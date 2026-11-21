@@ -93,23 +93,35 @@ function Hero({ go }: { go: PublicGo }) {
         <div aria-hidden="true" className="glow-pulse pointer-events-none absolute -left-20 top-1/3 h-72 w-72 rounded-full bg-sabero-electric/30 blur-3xl" />
         <div className="relative z-10 flex h-full flex-col justify-start px-6 py-14 text-white sm:px-10 lg:w-[62%] lg:pl-12 lg:pr-0 lg:pt-16 xl:pl-16">
           <Reveal>
-            <div className="relative mb-6 h-20 w-56"><Image src="/logo.png" alt="SABERO Consulting" fill sizes="224px" className="object-contain object-left" priority /></div>
             <span className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/5 px-4 py-1.5 text-[11px] font-black uppercase tracking-[0.18em] text-blue-100">
-              <Sparkles className="h-3.5 w-3.5 text-sabero-cyan" />Agentes de ventas con IA · Latinoamérica
+              <Sparkles className="h-3.5 w-3.5 text-sabero-cyan" />🇲🇽 🇨🇴 🇦🇷 Hecho para Latinoamérica
             </span>
           </Reveal>
           <Reveal delay={0.1}>
             <h1 className="mt-6 text-4xl font-black leading-[1.05] tracking-[-0.03em] sm:text-5xl">
-              Agente de ventas con IA que vende donde <span className="text-sabero-cyan">ya están tus clientes</span>
+              Tu equipo de ventas con IA que <span className="text-sabero-cyan">cierra por WhatsApp</span>
             </h1>
           </Reveal>
           <Reveal delay={0.2}>
-            <p className="mt-6 max-w-md text-base leading-7 text-blue-100">Tu agente de ventas con IA atiende tu WhatsApp, entiende las fotos que te envían, agenda reuniones y da seguimiento. Automatiza tus ventas; tú supervisas.</p>
+            <p className="mt-6 max-w-md text-base leading-7 text-blue-100">Atiende mensajes, entiende fotos, agenda reuniones y da seguimiento. Tú supervisas, la IA vende.</p>
           </Reveal>
           <Reveal delay={0.3}>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Button onClick={() => void go('planes')} className="px-6">Ver planes<ArrowRight className="ml-2 h-4 w-4" /></Button>
-              <Button variant="ghost" onClick={() => void go('acceso', 'register')} className="!border-white/30 !bg-transparent px-6 !text-white hover:!border-sabero-cyan hover:!text-sabero-cyan">Solicitar acceso</Button>
+              <Button onClick={() => void go('acceso', 'register')} className="px-6">Empezar ahora<ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="ghost" onClick={() => void go('planes')} className="!border-white/30 !bg-transparent px-6 !text-white hover:!border-sabero-cyan hover:!text-sabero-cyan">Ver cómo funciona</Button>
+            </div>
+          </Reveal>
+          <Reveal delay={0.4}>
+            <div className="mt-6 flex items-center gap-3 border-t border-white/10 pt-4">
+              <div className="flex -space-x-2">
+                {['#6366f1', '#ec4899', '#f59e0b', '#10b981'].map((color, i) => (
+                  <span key={i} className="grid h-7 w-7 place-items-center rounded-full border-2 border-sabero-navy text-[9px] font-black text-white" style={{ background: color }}>{['MA', 'LC', 'DR', 'JP'][i]}</span>
+                ))}
+              </div>
+              <div>
+                <p className="text-[11px] font-black text-white">+120 empresas en Latam</p>
+                <p className="text-[10px] text-blue-200/70">ya venden con SABERO</p>
+              </div>
             </div>
           </Reveal>
         </div>
@@ -117,28 +129,8 @@ function Hero({ go }: { go: PublicGo }) {
       <div className="relative flex items-center justify-center overflow-hidden px-5 py-14 sm:p-10">
         <div aria-hidden="true" className="pointer-events-none absolute -right-24 bottom-0 h-80 w-80 rounded-full bg-sabero-cyan/20 blur-3xl" />
         <Image src="/bots.png" alt="" aria-hidden="true" width={140} height={140} className="float-fast absolute right-6 top-6 hidden h-24 w-24 rounded-full object-cover opacity-90 xl:block" />
-        <div className="w-full lg:-translate-x-6 xl:-translate-x-12"><ChatDemo /></div>
+        <div className="w-full lg:-translate-x-12 xl:-translate-x-20"><ChatDemo /></div>
       </div>
-    </section>
-  );
-}
-
-function FeatureTiles() {
-  return (
-    <section className="border-b border-sabero-line bg-[#f4f8f7] px-5 py-10">
-      <Reveal>
-        <p className="mb-5 flex items-center justify-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-sabero-navy/75">
-          <span className="h-2 w-2 rounded-full bg-sabero-electric shadow-[0_0_12px_rgba(16,135,255,0.55)]" />Todo conectado
-        </p>
-        <div className="mx-auto grid max-w-3xl grid-cols-3 gap-3">
-          {[{ label: 'WhatsApp-first', Icon: MessageCircle }, { label: 'Conocimiento empresarial', Icon: BookOpenCheck }, { label: 'Multiempresa', Icon: Building2 }].map(({ label, Icon }) => (
-            <div key={label} className="flex min-h-[6rem] flex-col items-center justify-center gap-3 rounded-2xl border border-sabero-electric/40 bg-sabero-mist/90 px-2 py-3 text-center">
-              <Icon className="h-6 w-6 text-sabero-electric" />
-              <span className="text-xs font-semibold leading-4 text-sabero-navy">{label}</span>
-            </div>
-          ))}
-        </div>
-      </Reveal>
     </section>
   );
 }
@@ -362,7 +354,6 @@ export function HomeView({ go }: { go: PublicGo }) {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(softwareGraph()) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(faqGraph()) }} />
       <Hero go={go} />
-      <FeatureTiles />
       <ClientsSection />
       <Integrations />
       <Features />

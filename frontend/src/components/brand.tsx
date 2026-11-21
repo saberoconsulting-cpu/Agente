@@ -9,7 +9,7 @@ export function Brand({
   logoOnly = false,
 }: {
   dark?: boolean;
-  size?: 'default' | 'large';
+  size?: 'default' | 'large' | 'hero';
   centered?: boolean;
   prominentMark?: boolean;
   logoOnly?: boolean;
@@ -27,10 +27,11 @@ export function Brand({
           'relative grid shrink-0 place-items-center overflow-hidden',
           logoOnly
             ? 'h-20 w-44 xl:h-24 xl:w-52'
-            : !prominentMark && 'border bg-white shadow-enterprise',
+            : !prominentMark && size !== 'hero' && 'border bg-white shadow-enterprise',
           !logoOnly && prominentMark && 'h-14 w-40',
           !logoOnly && !prominentMark && size === 'default' && 'h-12 w-12 rounded-2xl border-white/15',
           !logoOnly && size === 'large' && 'h-40 w-40 rounded-2xl border-white/10',
+          !logoOnly && size === 'hero' && 'h-10 w-28',
         )}
       >
         <Image
@@ -41,6 +42,7 @@ export function Brand({
             'object-contain',
             logoOnly && 'p-0',
             !logoOnly && !prominentMark && size === 'default' && 'p-1.5',
+            !logoOnly && size === 'hero' && 'p-0',
             !logoOnly && !prominentMark && size === 'large' && 'p-1',
           )}
           priority
@@ -54,6 +56,7 @@ export function Brand({
                 'font-black tracking-[0.22em]',
                 prominentMark ? 'text-xl tracking-[0.16em] xl:text-2xl' : size === 'default' && 'text-sm',
                 size === 'large' && 'text-2xl',
+                size === 'hero' && 'text-lg',
               )}
             >
               SABERO AI
@@ -63,6 +66,7 @@ export function Brand({
                 'font-semibold uppercase tracking-[0.16em] text-sabero-electric',
                 prominentMark ? 'text-xs tracking-[0.18em] xl:text-sm' : size === 'default' && 'text-xs',
                 size === 'large' && 'text-base',
+                size === 'hero' && 'text-sm',
               )}
             >
               Sales Engine
